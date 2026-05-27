@@ -91,13 +91,42 @@ export function createInitialState(): GameState {
 export type GameAction =
   | { type: 'SELECT_COLOR'; color: Color }
   | { type: 'PLACE_ON_ROW'; rowIndex: number }
+  | { type: 'DISCARD_HELD' }
   | { type: 'RESET' }
+
+/** True if `color` can be placed in at least one hand-board row */
+export function hasAnyValidRow(state: GameState, color: Color): boolean {
+  return state.handRows.some((row, i) => {
+    const capacity = i + 1
+    return (
+      row.count < capacity &&
+      (row.color === null || row.color === color) &&
+      !state.wall[i][getWallCol(i, color)]
+    )
+  })
+}
 
 export function gameReducer(state: GameState, action: GameAction): GameState {
   switch (action.type) {
     // ── Reset ──────────────────────────────────
     case 'RESET':
       return createInitialState()
+
+    // ── Discard held tiles (no valid row available) ─
+    case 'DISCARD_HELD': {
+      if (state.phase !== 'place') return state
+      const replenish = state.market.length === 0
+      return {
+        ...state,
+        selectedColor: null,
+        selectedCount: 0,
+        phase: 'select',
+        market: replenish ? generateMarket() : state.market,
+        round: replenish ? state.round + 1 : state.round,
+        turn: state.turn + 1,
+        animatingCell: null,
+      }
+    }
 
     // ── Pick a colour from the market ──────────
     case 'SELECT_COLOR': {
