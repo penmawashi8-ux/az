@@ -68,6 +68,7 @@ const PROFILE_FIELDS: { key: string; label: string; placeholder: string }[] = [
   { key: 'bldg', label: '建物名・部屋', placeholder: '' },
   { key: 'birth', label: '生年月日', placeholder: '1990-01-01' },
   { key: 'gender', label: '性別', placeholder: '女性' },
+  { key: 'comment', label: '自由記述アンケートの回答（空なら定型文）', placeholder: 'いつも楽しく拝見しています…' },
 ]
 
 /** 応募フォームに自動入力するブックマークレット（プロフィールは端末内だけに埋め込む） */
@@ -126,18 +127,38 @@ function buildBookmarklet(p: Record<string, string>): string {
       return true
     }
     let n = 0
+    let q = 0
+    const survey = P.survey !== 'off'
+    const comment = P.comment || 'いつも楽しく拝見しています。商品の魅力がよく伝わってきて、ぜひ試してみたいと思いました。当選したら家族と一緒に大切に使わせていただきます。'
+    // 選ばない選択肢 / 触らないチェック（同意・メルマガ等は本人が確認する）
+    const SKIP = /その他|答えたくない|回答しない|回答しません|わからない|分からない|選択して|選んで|^-+$|^\s*$/
+    const NO_TOUCH = /同意|規約|ポリシー|個人情報|メルマガ|メールマガジン|配信を希望|ニュースレター|案内を受け|受け取る/
     document.querySelectorAll<HTMLInputElement>('input, select, textarea').forEach((el) => {
       const type = (el.getAttribute('type') || '').toLowerCase()
       if (['hidden', 'submit', 'button', 'checkbox', 'radio', 'file', 'password', 'image'].includes(type)) return
       if (el.value) return
       const h = [el.name, el.id, el.getAttribute('autocomplete'), el.getAttribute('placeholder'), el.getAttribute('aria-label')].join(' ')
       const hl = h + ' ' + labelOf(el)
-      for (const [re, get] of rules) {
-        if (re.test(h) || (!h.trim() && re.test(hl)) || re.test(hl.slice(0, 40))) {
-          const v = get(hl)
-          if (v && setVal(el, v)) n++
-          return
+      const isFree = /感想|理由|意見|コメント|メッセージ|ご要望|自由|エピソード|思い出|ひと言|一言|お聞かせ|教えて/.test(hl.slice(0, 120))
+      if (!(survey && isFree && (el instanceof HTMLTextAreaElement))) {
+        for (const [re, get] of rules) {
+          if (re.test(h) || (!h.trim() && re.test(hl)) || re.test(hl.slice(0, 40))) {
+            const v = get(hl)
+            if (v && setVal(el, v)) n++
+            return
+          }
         }
+      }
+      if (!survey) return
+      // ---- アンケート：プロフィールに該当しない項目
+      if (el instanceof HTMLSelectElement) {
+        const opts = Array.from(el.options).filter((o) => o.value && !o.disabled && !SKIP.test(o.text))
+        if (opts.length) {
+          setVal(el, opts[Math.floor(opts.length / 2)].value)
+          q++
+        }
+      } else if (el instanceof HTMLTextAreaElement || isFree) {
+        if (setVal(el, comment)) q++
       }
     })
     // 性別ラジオ
@@ -150,7 +171,55 @@ function buildBookmarklet(p: Record<string, string>): string {
         }
       })
     }
-    alert('懸賞オートフィル: ' + n + '項目を入力しました。内容を確認して送信してください。')
+    if (survey) {
+      const POSITIVE = /とても|非常に|満足|好き|はい|ある|あり|興味がある|使ってみたい|買いたい|購入したい|知っている|良い|よい/
+      const pick = <T,>(xs: T[], text: (x: T) => string) => {
+        const ok = xs.filter((x) => !SKIP.test(text(x)) && !NO_TOUCH.test(text(x)))
+        return ok.find((x) => POSITIVE.test(text(x))) || ok[0]
+      }
+      // 通常のラジオ・チェックボックス（name単位のグループ）
+      const groups = new Map<string, HTMLInputElement[]>()
+      document.querySelectorAll<HTMLInputElement>('input[type=radio], input[type=checkbox]').forEach((el) => {
+        if (el.disabled || !el.name) return
+        const k = el.type + ':' + el.name
+        groups.set(k, [...(groups.get(k) || []), el])
+      })
+      groups.forEach((els, k) => {
+        if (els.some((e) => e.checked)) return
+        if (k.startsWith('checkbox:') && els.length < 2) return // 単独チェック＝同意系なので触らない
+        const t = (e: HTMLInputElement) => (labelOf(e).slice(0, 40) + ' ' + e.value).trim()
+        if (els.some((e) => NO_TOUCH.test(t(e)))) return
+        const c = pick(els, (e) => (e.labels?.[0]?.textContent || e.value || '').trim())
+        if (c) {
+          c.click()
+          q++
+        }
+      })
+      // Googleフォーム等（role属性ベース）
+      document.querySelectorAll<HTMLElement>('[role=radiogroup]').forEach((g) => {
+        const rs = Array.from(g.querySelectorAll<HTMLElement>('[role=radio]'))
+        if (!rs.length || rs.some((r) => r.getAttribute('aria-checked') === 'true')) return
+        const c = pick(rs, (r) => r.getAttribute('aria-label') || r.getAttribute('data-value') || r.textContent || '')
+        if (c) {
+          c.click()
+          q++
+        }
+      })
+      const cbGroups = new Map<Element, HTMLElement[]>()
+      document.querySelectorAll<HTMLElement>('[role=checkbox]').forEach((c) => {
+        const g = c.closest('[role=listitem], [role=group], fieldset') || c.parentElement!
+        cbGroups.set(g, [...(cbGroups.get(g) || []), c])
+      })
+      cbGroups.forEach((cs) => {
+        if (cs.length < 2 || cs.some((c) => c.getAttribute('aria-checked') === 'true')) return
+        const c = pick(cs, (x) => x.getAttribute('aria-label') || x.getAttribute('data-answer-value') || x.textContent || '')
+        if (c) {
+          c.click()
+          q++
+        }
+      })
+    }
+    alert('懸賞オートフィル: 個人情報' + n + '項目' + (survey ? '・アンケート' + q + '問' : '') + 'を入力しました。\n同意チェックと内容を確認して送信してください。')
   }
   const src = `(${fn.toString()})(${JSON.stringify(p)})`
   return 'javascript:' + encodeURIComponent(src)
@@ -248,7 +317,7 @@ export default function KenshoList() {
 
       {showProfile && (
         <section className="k-profile">
-          <p className="k-note">応募フォームの自動入力用です。この端末のブラウザにだけ保存され、どこにも送信されません。</p>
+          <p className="k-note">応募フォームの自動入力用です。この端末のブラウザの中にだけ保存され、サーバーやGitHubには一切送信されません。ブックマーク登録後は、ブックマーク側にも同じ内容が入ります。</p>
           <div className="k-grid">
             {PROFILE_FIELDS.map((f) => (
               <label key={f.key}>
@@ -265,6 +334,18 @@ export default function KenshoList() {
               </label>
             ))}
           </div>
+          <label className="k-check">
+            <input
+              type="checkbox"
+              checked={profile.survey !== 'off'}
+              onChange={(e) => {
+                const next = { ...profile, survey: e.target.checked ? 'on' : 'off' }
+                setProfile(next)
+                writeLS(PROFILE_KEY, next)
+              }}
+            />{' '}
+            アンケートにも自動で回答する（選択式は好意的な選択肢、自由記述は上の文）
+          </label>
           <p className="k-note">
             下のリンクをブックマークに登録（PCはドラッグ、スマホは長押し→コピーしてブックマークのURLに貼り付け）。応募フォームでそのブックマークを開くと入力されます。
           </p>
