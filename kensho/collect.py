@@ -1,0 +1,449 @@
+#!/usr/bin/env python3
+"""懸賞コレクター.
+
+PR TIMES / @Press の公開RSSからプレゼントキャンペーンを拾い、
+締切・当選数・応募方法・応募先URLを抽出してスコア順に public/kensho/data.json へ保存する。
+標準ライブラリのみ。GitHub Actions から1時間ごとに実行する想定。
+"""
+from __future__ import annotations
+
+import datetime as dt
+import html
+import json
+import math
+import os
+import re
+import sys
+import time
+import unicodedata
+import urllib.parse
+import urllib.request
+
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+DATA_PATH = os.environ.get("KENSHO_DATA") or os.path.join(ROOT, "public", "kensho", "data.json")
+STATE_PATH = os.environ.get("KENSHO_STATE") or os.path.join(ROOT, "kensho", "state.json")
+NEW_PATH = os.environ.get("KENSHO_NEW") or os.path.join(ROOT, "kensho", ".new_items.json")
+
+JST = dt.timezone(dt.timedelta(hours=9))
+UA = "Mozilla/5.0 (compatible; kensho-collector/1.0; personal RSS reader)"
+FETCH_DELAY = 1.5          # 詳細ページ取得の間隔（秒）
+MAX_DETAIL_FETCH = int(os.environ.get("KENSHO_MAX_FETCH", "80"))
+NO_DEADLINE_TTL_DAYS = 30  # 締切不明のものは公開から30日で消す
+
+FEEDS = [
+    ("prtimes", "https://prtimes.jp/index.rdf"),
+    ("atpress", "https://www.atpress.ne.jp/rss/index.rdf"),
+]
+KEYWORD_PAGES = [
+    ("prtimes", "https://prtimes.jp/topics/keywords/" + urllib.parse.quote("プレゼントキャンペーン")),
+    ("prtimes", "https://prtimes.jp/topics/keywords/" + urllib.parse.quote("キャンペーン")),
+]
+
+# 一覧段階の粗いフィルタ（タイトル+概要）
+CANDIDATE_RE = re.compile(r"プレゼント|抽選|当たる|当選|名様|懸賞|応募")
+# 詳細段階の確認：抽選系の語 と 賞品系の語 の両方が必要
+LOTTERY_RE = re.compile(r"抽選|名様|当選")
+PRIZE_RE = re.compile(r"プレゼント|当たる|賞品|景品")
+
+TODAY = dt.datetime.now(JST).date()
+
+
+# ---------------------------------------------------------------- utils
+def norm(s: str) -> str:
+    return unicodedata.normalize("NFKC", s)
+
+
+def fetch(url: str, timeout: int = 25) -> str | None:
+    req = urllib.request.Request(url, headers={"User-Agent": UA, "Accept-Language": "ja"})
+    for attempt in range(3):
+        try:
+            with urllib.request.urlopen(req, timeout=timeout) as r:
+                raw = r.read()
+                cs = r.headers.get_content_charset() or "utf-8"
+                return raw.decode(cs, errors="replace")
+        except Exception as e:  # noqa: BLE001
+            print(f"  fetch fail ({attempt + 1}/3) {url}: {e}", file=sys.stderr)
+            time.sleep(2 * (attempt + 1))
+    return None
+
+
+def html_to_lines(fragment: str) -> list[str]:
+    fragment = re.sub(r"(?is)<(script|style|svg|noscript)[^>]*>.*?</\1>", " ", fragment)
+    fragment = re.sub(r"(?i)<br\s*/?>|</(p|div|li|tr|h\d|td|th|dd|dt)>", "\n", fragment)
+    text = html.unescape(re.sub(r"<[^>]+>", " ", fragment))
+    text = norm(text)
+    return [re.sub(r"[ \t　]+", " ", l).strip() for l in text.split("\n") if l.strip()]
+
+
+def load_json(path: str, default):
+    try:
+        with open(path, encoding="utf-8") as f:
+            return json.load(f)
+    except (OSError, ValueError):
+        return default
+
+
+def save_json(path: str, obj) -> None:
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    tmp = path + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as f:
+        json.dump(obj, f, ensure_ascii=False, indent=1)
+        f.write("\n")
+    os.replace(tmp, path)
+
+
+# ---------------------------------------------------------------- feeds
+def parse_rss(source: str, xml: str) -> list[dict]:
+    out = []
+    for m in re.finditer(r'<item[^>]*rdf:about="([^"]+)"[^>]*>(.*?)</item>', xml, re.S):
+        url, body = m.group(1), m.group(2)
+
+        def tag(name: str) -> str:
+            t = re.search(rf"<{name}>(.*?)</{name}>", body, re.S)
+            if not t:
+                return ""
+            v = t.group(1)
+            v = re.sub(r"^<!\[CDATA\[|\]\]>$", "", v.strip())
+            return norm(html.unescape(re.sub(r"<[^>]+>", "", v))).strip()
+
+        out.append({
+            "source": source,
+            "url": url.strip(),
+            "title": tag("title"),
+            "desc": tag("description"),
+            "company": tag("dc:corp") or tag("dc:creator"),
+            "published": (tag("dc:date") or "")[:10],
+        })
+    return out
+
+
+def parse_keyword_page(source: str, page: str) -> list[dict]:
+    urls = sorted(set(re.findall(r'/main/html/rd/p/[0-9.]+\.html', page)))
+    return [{"source": source, "url": "https://prtimes.jp" + u, "title": "", "desc": "",
+             "company": "", "published": ""} for u in urls]
+
+
+# ---------------------------------------------------------------- extraction
+DATE_PATTERNS = [
+    re.compile(r"(?P<y>20\d{2})\s*年\s*(?P<m>\d{1,2})\s*月\s*(?P<d>\d{1,2})\s*日"),
+    re.compile(r"(?P<y>20\d{2})\s*[/.\-]\s*(?P<m>\d{1,2})\s*[/.\-]\s*(?P<d>\d{1,2})"),
+    re.compile(r"(?<![\d/])(?P<m>\d{1,2})\s*月\s*(?P<d>\d{1,2})\s*日"),
+    re.compile(r"(?<![\d/.])(?P<m>1[0-2]|0?[1-9])/(?P<d>3[01]|[12]\d|0?[1-9])(?![\d/])"),
+]
+PERIOD_LABEL_RE = re.compile(r"応募期間|募集期間|実施期間|キャンペーン期間|開催期間|応募締切|応募締め切り|締切|締め切り|〆切|応募受付|受付期間|投稿期間|参加期間|期間")
+
+
+def find_dates(s: str, base: dt.date) -> list[tuple[int, dt.date]]:
+    found: list[tuple[int, dt.date]] = []
+    taken: list[tuple[int, int]] = []
+    for pat in DATE_PATTERNS:
+        for m in pat.finditer(s):
+            if any(a <= m.start() < b for a, b in taken):
+                continue
+            try:
+                mo, d = int(m.group("m")), int(m.group("d"))
+                y = int(m.groupdict().get("y") or 0)
+                if not y:
+                    y = base.year
+                    cand = dt.date(y, mo, d)
+                    if cand < base - dt.timedelta(days=60):
+                        cand = dt.date(y + 1, mo, d)
+                else:
+                    cand = dt.date(y, mo, d)
+            except ValueError:
+                continue
+            taken.append((m.start(), m.end()))
+            found.append((m.start(), cand))
+    found.sort()
+    return found
+
+
+def extract_deadline(lines: list[str], base: dt.date) -> str | None:
+    # ラベル付きの行（＋直後2行）を優先。期間なら最後の日付が締切。
+    for i, line in enumerate(lines):
+        if PERIOD_LABEL_RE.search(line) and len(line) < 200:
+            window = " ".join(lines[i:i + 3])
+            ds = find_dates(window, base)
+            if ds:
+                # 「期間」行に複数日付があるとき、開始〜終了なので最後を採用
+                return max(d for _, d in ds[:4]).isoformat()
+    # 「〜まで」表現
+    for line in lines:
+        m = re.search(r"(.{0,40})まで", line)
+        if m and ("応募" in line or "キャンペーン" in line):
+            ds = find_dates(m.group(1), base)
+            if ds:
+                return ds[-1][1].isoformat()
+    return None
+
+
+def extract_winners(text: str) -> int | None:
+    nums = []
+    for m in re.finditer(r"([\d,]+)\s*(?:名様|名に|名へ|名を|名が|名\)|組様|組に|人様)", text):
+        try:
+            n = int(m.group(1).replace(",", ""))
+        except ValueError:
+            continue
+        ctx = text[max(0, m.start() - 40): m.end() + 10]
+        if 0 < n <= 100000 and re.search(r"抽選|当選|プレゼント|当たる|名様", ctx):
+            nums.append(n)
+    return max(nums) if nums else None
+
+
+def extract_prize(lines: list[str], title: str) -> str:
+    for line in lines:
+        if re.search(r"名様|名に|人に", line) and re.search(r"プレゼント|当たる|贈呈|進呈", line) and len(line) < 160:
+            return line
+    m = re.search(r"[「『【]?([^「」『』【】]{2,60})[」』】]?(?:を|が)?(?:抽選で)?.{0,20}プレゼント", title)
+    return m.group(0) if m else ""
+
+
+PRIZE_VALUE_RE = re.compile(r"([\d,]+(?:\.\d+)?)\s*(万)?\s*円")
+
+
+def extract_value(text: str) -> int:
+    """賞品額の目安（円）。'XX円分' など賞品文脈のものだけ。"""
+    best = 0
+    for m in PRIZE_VALUE_RE.finditer(text):
+        ctx = text[max(0, m.start() - 30): m.end() + 15]
+        if not re.search(r"分|相当|ギフト|券|ペイ|ポイント|現金|賞金|賞品|プレゼント", ctx):
+            continue
+        if re.search(r"税込|税抜|価格|定価|販売|円\(税", ctx):
+            continue
+        try:
+            v = float(m.group(1).replace(",", ""))
+        except ValueError:
+            continue
+        if m.group(2):
+            v *= 10000
+        if v <= 10_000_000:
+            best = max(best, int(v))
+    return best
+
+
+METHOD_RULES = [
+    ("x", r"(?:X|Twitter|ツイッター).{0,40}(?:フォロー|リポスト|リツイート|RT|引用|返信|リプライ)|フォロー.{0,20}(?:リポスト|リツイート|RT)"),
+    ("instagram", r"(?:Instagram|インスタ).{0,40}(?:フォロー|いいね|コメント|投稿)"),
+    ("line", r"LINE.{0,20}(?:友だち|友達|お友だち)"),
+    ("tiktok", r"TikTok.{0,40}(?:フォロー|いいね|投稿)"),
+    ("form", r"応募フォーム|フォームから|フォームより|特設サイト(?:から|より|にて)|WEB(?:から|より)|Web(?:から|より)|ウェブ(?:から|より)|専用ページ|キャンペーンサイト"),
+    ("survey", r"アンケート(?:に回答|回答|にお答え)"),
+    ("purchase", r"レシート|購入者|購入いただ|ご購入|お買い上げ|対象商品を(?:購入|お買)|購入金額|ご利用金額|応募券|シリアル(?:コード|番号)"),
+    ("hagaki", r"はがき|ハガキ|葉書|郵送"),
+    ("visit", r"店頭で|来店|会場で|ご来場"),
+]
+METHOD_LABEL = {"x": "X", "instagram": "Instagram", "line": "LINE", "tiktok": "TikTok", "form": "Webフォーム",
+                "survey": "アンケート", "purchase": "購入必須", "hagaki": "ハガキ", "visit": "来店"}
+
+
+CONTEXTUAL = {"purchase", "visit", "hagaki"}  # 応募条件の文脈でだけ判定する
+CONDITION_RE = re.compile(r"応募|参加|対象|条件|いただいた方|された方|した方|抽選")
+
+
+def extract_methods(text: str) -> list[str]:
+    lines = text.split("\n")
+    cond = "\n".join(l for l in lines if CONDITION_RE.search(l))
+    out = []
+    for k, pat in METHOD_RULES:
+        if re.search(pat, cond if k in CONTEXTUAL else text):
+            out.append(k)
+    return out
+
+
+SKIP_HOSTS = ("prtimes.jp", "atpress.ne.jp", "facebook.com/sharer", "twitter.com/intent", "x.com/intent",
+              "line.me/R/msg", "b.hatena", "pocket", "google.com", "apple.com/jp/app", "play.google",
+              "tayori.com", "jooto.com", "predge.jp")
+SNS_PROFILE_RE = re.compile(r"^https?://(?:www\.)?(?:x|twitter|instagram|tiktok|facebook|youtube)\.com/[^/?#]+/?(?:\?.*)?$")
+
+
+def extract_entry_url(fragment: str) -> str | None:
+    anchors = []
+    for m in re.finditer(r'<a\b[^>]*href="(https?://[^"]+)"[^>]*>(.*?)</a>', fragment, re.S | re.I):
+        href = html.unescape(m.group(1))
+        text = norm(html.unescape(re.sub(r"<[^>]+>", "", m.group(2)))).strip()
+        if any(h in href for h in SKIP_HOSTS):
+            continue
+        anchors.append((href, text, m.start()))
+    if not anchors:
+        return None
+
+    def rank(a):
+        href, text, pos = a
+        r = 0
+        ctx = fragment[max(0, pos - 300):pos]
+        ctx_t = norm(html.unescape(re.sub(r"<[^>]+>", "", ctx)))
+        if re.search(r"応募", text):
+            r += 50
+        if re.search(r"キャンペーン|特設|詳細|こちら|参加", text):
+            r += 25
+        if re.search(r"応募|キャンペーン", ctx_t[-80:]):
+            r += 20
+        if re.search(r"campaign|cp|present|lottery|entry|form|cmp", href, re.I):
+            r += 20
+        if re.search(r"(?:x|twitter)\.com/[^/]+/status/|instagram\.com/(?:p|reel)/", href):
+            r += 30
+        if SNS_PROFILE_RE.match(href):
+            r -= 15
+        return r
+
+    best = max(anchors, key=rank)
+    return best[0] if rank(best) > 0 else None
+
+
+def score(item: dict) -> int:
+    s = 0.0
+    w = item.get("winners") or 0
+    s += min(35, 8 * math.log10(w + 1) * 1.6) if w else 5
+    v = item.get("value") or 0
+    if v:
+        s += min(25, 6 * math.log10(v / 500 + 1) * 2)
+    m = set(item.get("methods", []))
+    if m & {"x", "instagram", "line", "tiktok", "form", "survey"} and "purchase" not in m:
+        s += 20  # 誰でも無料で即応募
+    if "purchase" in m:
+        s -= 20
+    if "hagaki" in m:
+        s -= 8
+    if "visit" in m:
+        s -= 15
+    if item.get("entryUrl"):
+        s += 10
+    if re.search(r"現金|ギフト券|ギフトカード|Amazon|QUOカード|ペイ|ポイント|商品券", item.get("title", "") + item.get("prize", "")):
+        s += 10
+    dl = item.get("deadline")
+    if dl:
+        days = (dt.date.fromisoformat(dl) - TODAY).days
+        if days <= 3:
+            s += 5  # 締切間近
+    return int(round(max(0, min(100, s))))
+
+
+def analyze(cand: dict, page: str) -> dict | None:
+    if cand["source"] == "prtimes":
+        i = page.find('id="press-release-body"')
+        j = page.find('js-press-release-image-list', i)
+        frag = page[i:j if j > i else i + 120000] if i >= 0 else page
+        if not cand["title"]:
+            t = re.search(r"<title>(.*?)</title>", page, re.S)
+            cand["title"] = norm(html.unescape(t.group(1))).split("|")[0].strip() if t else ""
+        if not cand["published"]:
+            d = re.search(r'"datePublished"\s*:\s*"(\d{4}-\d{2}-\d{2})', page) or \
+                re.search(r"(20\d{2})年(\d{1,2})月(\d{1,2})日 \d{1,2}時", norm(page))
+            if d and d.lastindex == 1:
+                cand["published"] = d.group(1)
+            elif d:
+                cand["published"] = f"{d.group(1)}-{int(d.group(2)):02d}-{int(d.group(3)):02d}"
+        if not cand["company"]:
+            c = re.search(r'"publisher"\s*:\s*\{[^}]*"name"\s*:\s*"([^"]+)"', page)
+            cand["company"] = c.group(1) if c and "PR TIMES" not in c.group(1) else ""
+    else:
+        i = page.find('id="news_body_block"')
+        j = page.find('id="article-footer"', i)
+        frag = page[i:j if j > i else i + 120000] if i >= 0 else page
+
+    lines = html_to_lines(frag)
+    text = "\n".join(lines)
+    full = cand["title"] + "\n" + text
+    if not (LOTTERY_RE.search(full) and PRIZE_RE.search(full)):
+        return None
+
+    try:
+        base = dt.date.fromisoformat(cand["published"]) if cand["published"] else TODAY
+    except ValueError:
+        base = TODAY
+    deadline = extract_deadline(lines, base)
+    if deadline and dt.date.fromisoformat(deadline) < TODAY:
+        return None
+
+    item = {
+        "id": re.sub(r"\W+", "_", cand["url"].split("//", 1)[-1]),
+        "source": cand["source"],
+        "url": cand["url"],
+        "title": cand["title"],
+        "company": cand["company"],
+        "published": cand["published"] or TODAY.isoformat(),
+        "deadline": deadline,
+        "winners": extract_winners(full),
+        "value": extract_value(full),
+        "prize": extract_prize(lines, cand["title"]),
+        "methods": extract_methods(full),
+        "entryUrl": extract_entry_url(frag),
+        "addedAt": dt.datetime.now(JST).isoformat(timespec="seconds"),
+    }
+    item["score"] = score(item)
+    return item
+
+
+# ---------------------------------------------------------------- main
+def is_alive(item: dict) -> bool:
+    if item.get("deadline"):
+        return dt.date.fromisoformat(item["deadline"]) >= TODAY
+    try:
+        pub = dt.date.fromisoformat(item["published"])
+    except (KeyError, ValueError):
+        return False
+    return (TODAY - pub).days <= NO_DEADLINE_TTL_DAYS
+
+
+def main() -> int:
+    data = load_json(DATA_PATH, {"items": []})
+    state = load_json(STATE_PATH, {"seen": []})
+    seen: list[str] = state.get("seen", [])
+    seen_set = set(seen)
+    items = {it["url"]: it for it in data.get("items", []) if is_alive(it)}
+
+    cands: dict[str, dict] = {}
+    for src, url in FEEDS:
+        xml = fetch(url)
+        if not xml:
+            continue
+        for c in parse_rss(src, xml):
+            if c["url"] in seen_set or c["url"] in items:
+                continue
+            if CANDIDATE_RE.search(c["title"] + c["desc"]):
+                cands[c["url"]] = c
+    for src, url in KEYWORD_PAGES:
+        page = fetch(url)
+        if not page:
+            continue
+        for c in parse_keyword_page(src, page):
+            if c["url"] not in seen_set and c["url"] not in items:
+                cands.setdefault(c["url"], c)
+
+    print(f"candidates: {len(cands)}")
+    new_items = []
+    for n, c in enumerate(list(cands.values())[:MAX_DETAIL_FETCH]):
+        time.sleep(FETCH_DELAY if n else 0)
+        page = fetch(c["url"])
+        if page is None:
+            continue  # 次回リトライ
+        seen.append(c["url"])
+        seen_set.add(c["url"])
+        it = analyze(c, page)
+        if it:
+            items[it["url"]] = it
+            new_items.append(it)
+            print(f"  + [{it['score']:3d}] {it['title'][:60]}")
+
+    # スコアは締切接近で変わるので毎回再計算
+    alive = [it for it in items.values() if is_alive(it)]
+    for it in alive:
+        it["score"] = score(it)
+    alive.sort(key=lambda x: (-x["score"], x.get("deadline") or "9999"))
+
+    save_json(DATA_PATH, {
+        "updatedAt": dt.datetime.now(JST).isoformat(timespec="seconds"),
+        "methodLabels": METHOD_LABEL,
+        "items": alive,
+    })
+    save_json(STATE_PATH, {"seen": seen[-6000:]})
+
+    # 通知用（GitHub Actions が読む）
+    with open(NEW_PATH, "w", encoding="utf-8") as f:
+        json.dump(sorted(new_items, key=lambda x: -x["score"]), f, ensure_ascii=False)
+    print(f"new: {len(new_items)}, total alive: {len(alive)}")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

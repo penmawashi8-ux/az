@@ -31,3 +31,9 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# kensho (generated; lives on kensho-data branch)
+/public/kensho/data.json
+/kensho/state.json
+/kensho/.new_items.json
+__pycache__/

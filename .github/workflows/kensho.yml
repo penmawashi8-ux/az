@@ -1,0 +1,57 @@
+name: kensho-collect
+
+on:
+  schedule:
+    - cron: "17 * * * *"   # 毎時17分（UTC）
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: kensho-collect
+  cancel-in-progress: false
+
+jobs:
+  collect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Checkout data branch
+        run: |
+          mkdir data
+          if git ls-remote --exit-code --heads origin kensho-data >/dev/null; then
+            git fetch --depth=1 origin kensho-data
+            git show FETCH_HEAD:data.json > data/data.json
+            git show FETCH_HEAD:state.json > data/state.json
+          fi
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Collect
+        env:
+          KENSHO_DATA: data/data.json
+          KENSHO_STATE: data/state.json
+          KENSHO_NEW: new_items.json
+        run: python kensho/collect.py
+
+      - name: Publish data branch
+        run: |
+          cd data
+          git init -q -b kensho-data
+          git config user.name "kensho-bot"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add data.json state.json
+          git commit -q -m "data: $(date -u +%FT%TZ)"
+          git push -f "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}.git" kensho-data
+
+      - name: Notify
+        env:
+          NTFY_TOPIC: ${{ secrets.NTFY_TOPIC }}
+          NTFY_MIN_SCORE: ${{ vars.NTFY_MIN_SCORE || '30' }}
+          KENSHO_PAGE_URL: ${{ vars.KENSHO_PAGE_URL || 'https://az-tawny.vercel.app/kensho' }}
+        run: python kensho/notify.py new_items.json
