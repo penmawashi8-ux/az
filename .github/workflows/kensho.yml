@@ -53,5 +53,5 @@ jobs:
         env:
           NTFY_TOPIC: ${{ secrets.NTFY_TOPIC }}
           NTFY_MIN_SCORE: ${{ vars.NTFY_MIN_SCORE || '30' }}
-          KENSHO_PAGE_URL: ${{ vars.KENSHO_PAGE_URL || 'https://az-tawny.vercel.app/kensho' }}
+          KENSHO_PAGE_URL: ${{ vars.KENSHO_PAGE_URL || 'https://penmawashi8-ux.github.io/az/kensho/' }}
         run: python kensho/notify.py new_items.json

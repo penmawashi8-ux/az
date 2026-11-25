@@ -244,7 +244,7 @@ export default function KenshoList() {
     setProfile(readLS(PROFILE_KEY, {}))
     const get = (u: string) => fetch(u, { cache: 'no-store' }).then((r) => (r.ok ? r.json() : Promise.reject(r.status)))
     get(DATA_URL)
-      .catch(() => get('/kensho/data.json'))
+      .catch(() => get((process.env.NEXT_PUBLIC_BASE_PATH || '') + '/kensho/data.json'))
       .then(setData)
       .catch((e) => setError(String(e)))
   }, [])

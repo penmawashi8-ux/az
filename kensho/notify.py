@@ -11,7 +11,7 @@ if not topic:
     sys.exit(0)
 
 min_score = int(os.environ.get("NTFY_MIN_SCORE", "30"))
-page = os.environ.get("KENSHO_PAGE_URL", "https://az-tawny.vercel.app/kensho")
+page = os.environ.get("KENSHO_PAGE_URL", "https://penmawashi8-ux.github.io/az/kensho/")
 path = sys.argv[1] if len(sys.argv) > 1 else "kensho/.new_items.json"
 try:
     items = [i for i in json.load(open(path, encoding="utf-8")) if i["score"] >= min_score]
