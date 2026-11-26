@@ -1,12 +1,14 @@
 // ==UserScript==
 // @name         懸賞リスト ワンボタン応募
 // @namespace    penmawashi8-ux.kensho
-// @version      1.0.0
+// @version      1.0.1
 // @description  懸賞リストの「ワンボタン応募」から開いたXの投稿で、フォロー・リポスト・いいねを押して懸賞リストへ戻る
 // @match        https://x.com/*
 // @match        https://twitter.com/*
 // @match        https://mobile.twitter.com/*
 // @match        https://penmawashi8-ux.github.io/az/kensho/*
+// @downloadURL  https://penmawashi8-ux.github.io/az/kensho/x-oneclick.user.js
+// @updateURL    https://penmawashi8-ux.github.io/az/kensho/x-oneclick.user.js
 // @run-at       document-idle
 // @grant        none
 // ==/UserScript==
@@ -17,7 +19,7 @@
  */
 ;(function () {
   'use strict'
-  const VERSION = '1.0.0'
+  const VERSION = '1.0.1'
   const JOB_KEY = 'kensho.xjob'
 
   // 懸賞リスト側：このスクリプトが入っていることを知らせる
@@ -142,6 +144,10 @@
     // フォロー：ポスト画面にボタンがあればここで、なければプロフィールへ
     const fb = followBtn(job.user)
     if (fb) return doFollow(job, fb)
+    toProfile(job)
+  }
+
+  function toProfile(job) {
     job.stage = 'follow'
     saveJob(job)
     location.href = location.origin + '/' + job.user
@@ -159,8 +165,16 @@
     if (/-unfollow$/.test(fb.dataset.testid || '')) job.log.push('フォロー済み')
     else {
       fb.click()
-      const ok = await waitFor(() => /-unfollow$/.test(followBtn(job.user)?.dataset.testid || ''), 5000)
-      if (!ok) return fail(job, 'フォローできたか確認できません')
+      // フォローするとボタンが「フォロー中」に変わるか、ポスト画面では消える
+      const ok = await waitFor(() => {
+        const b = followBtn(job.user)
+        return !b || !b.isConnected || /-unfollow$/.test(b.dataset.testid || '')
+      }, 6000)
+      if (!ok) {
+        // ポスト画面で確認できなければ、プロフィールで確かめ直す（済んでいれば「フォロー済み」になる）
+        if (job.stage !== 'follow') return toProfile(job)
+        return fail(job, 'フォローできたか確認できません')
+      }
       job.log.push('フォロー')
     }
     banner('完了：' + job.log.join('・') + '。懸賞リストに戻ります', job, false)
