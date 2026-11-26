@@ -147,6 +147,10 @@ async function applyOne(it) {
     if (found.sns) return { status: 'skip', reason: 'SNS応募' }
     if (!found.frame) return { status: 'skip', reason: 'フォームが見つからない' }
     let { page: p, frame } = found
+    // 問い合わせフォーム・検索フォーム等に誤って送信しない
+    const where = `${frame.url()} ${await p.title().catch(() => '')}`
+    if (/お?問い?合わ?せ|contact|inquiry|toiawase|support|ログイン|login|会員登録|signup|register/i.test(where))
+      return { status: 'skip', reason: '応募フォームではない（問い合わせ/会員登録等）' }
     const text = await pageText(p)
     if (NO_AUTO.test(text)) return { status: 'skip', reason: '規約で自動応募禁止' }
 
