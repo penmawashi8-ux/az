@@ -8,3 +8,7 @@
 ローカル実行: `python3 kensho/collect.py` → `public/kensho/data.json`
 
 方針: 応募の最終送信・CAPTCHA・SNSのフォロー/リポストは自動化しない（規約違反・当選無効・凍結の回避）。
+
+## 実行のしかた
+- GitHub の定期実行（schedule）はこのリポジトリでは発火しないため、`kensho/` 以下の変更を main に push すると収集・自動応募が1回走る。
+- GitHub アプリ／Web の Actions → kensho-collect →「Run workflow」でも実行できる。
