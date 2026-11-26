@@ -568,6 +568,11 @@ export default function KenshoList() {
           連続応募モード（{items.length}件）
         </button>
       )}
+      {tab === 'x' && items.length > 0 && (
+        <label className="k-note k-onetrip">
+          <input type="checkbox" checked={oneTrip} onChange={(e) => setOneTrip(e.target.checked)} /> まとめて1回で開く（フォロー・リポスト・いいねを投稿ページで一度に）
+        </label>
+      )}
 
       {tab === 'history' && (
         <section>
