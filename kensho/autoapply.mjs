@@ -22,7 +22,7 @@ const DIR = path.dirname(fileURLToPath(import.meta.url))
 const DATA = process.env.KENSHO_DATA || 'data/data.json'
 const APPLIED = process.env.KENSHO_APPLIED || 'data/applied.json'
 const SUBMIT = process.env.KENSHO_SUBMIT === '1'
-const MAX = Number(process.env.KENSHO_MAX_APPLY || 15)
+const MAX = Number(process.env.KENSHO_MAX_APPLY || 40)
 
 let profile
 try {
@@ -48,7 +48,7 @@ const needsReapply = (a) =>
 const NO_DUP = /(重複|複数回|二重|同一人物|同一の方)[^。]{0,25}(応募|エントリー)?[^。]{0,25}(無効|禁止|不可|できません|お断り|認め|対象外|取り消)|(お?一人様?|おひとり様?|1人|１人|お一人)\s*(につき)?\s*(1|１|一)\s*(回|口)(限り|まで|のみ)?/
 
 // ロボットの版。上げると「フォームが見つからない」等でスキップした懸賞に再挑戦する
-const BOT_VERSION = 5
+const BOT_VERSION = 6
 const RETRYABLE = /フォームが見つからない|入力欄が個人情報フォームでない|必須項目が埋められない|クイズに答えられない/
 const ENTRY_LINK = /応募フォーム|応募する|応募はこちら|ご応募はこちら|応募ページ|エントリー|参加する|アンケートに(回答|答え)|アンケートはこちら|今すぐ応募|応募画面|フォームへ|応募へ|^\s*応募\s*$|ENTRY|Entry|APPLY|Apply|応募受付|応募ボタン|プレゼントに応募|キャンペーンに参加/
 const ENTRY_NG = /応募要項|応募規約|応募方法|応募資格|応募条件|注意事項|当選発表|よくある|FAQ|プライバシー/
@@ -59,6 +59,13 @@ const NG_BTN = /戻る|修正|キャンセル|リセット|クリア|ログイ�
 const SUBMIT_BTN = /応募する|送信する|この内容で|^送信$|^応募$|確定|エントリーする|応募を確定|上記内容で/
 const NEXT_BTN = /確認|次へ|進む|submit/i
 
+function rank(it) {
+  const a = applied[it.id]
+  if (!a) return 1
+  if (needsReapply(a)) return 0
+  if (a.status === 'fail') return 2
+  return 3
+}
 const targets = data.items
   .filter((it) => {
     if (!it.webOpen || !it.entryUrl) return false
@@ -69,7 +76,8 @@ const targets = data.items
     if (a.status === 'skip') return RETRYABLE.test(a.reason || '') && (a.v || 1) < BOT_VERSION
     return false
   })
-  .sort((a, b) => Number(!!applied[b.id]) - Number(!!applied[a.id]) || b.score - a.score) // 再応募を優先
+  // 優先順：再応募 → 未挑戦 → 入力エラー等の失敗 → 「見つからない」等の再確認
+  .sort((a, b) => rank(a) - rank(b) || b.score - a.score)
   .slice(0, MAX)
 
 console.log(`mode=${SUBMIT ? 'SUBMIT' : 'DRY-RUN'} targets=${targets.length} already=${Object.keys(applied).length}`)
@@ -168,11 +176,11 @@ async function clickSubmit(frame) {
       const ok = new RegExp(okSrc)
       const next = new RegExp(nextSrc, 'i')
       const ng = new RegExp(ngSrc)
-      const txt = (b) => (b.value || b.getAttribute('aria-label') || b.textContent || '').trim()
-      const btns = Array.from(document.querySelectorAll('button, input[type=submit], input[type=image], a[role=button], [role=button]')).filter(
+      const txt = (b) => (b.value || b.getAttribute('aria-label') || b.textContent || b.alt || '').replace(/[\s\u3000⇒→>＞»]+/g, '')
+      const btns = Array.from(document.querySelectorAll('button, input[type=submit], input[type=image], input[type=button], a[role=button], [role=button]')).filter(
         (b) => (b.offsetWidth || b.offsetHeight) && !b.disabled && !ng.test(txt(b)),
       )
-      const b = btns.find((b) => ok.test(txt(b))) || btns.find((b) => next.test(txt(b))) || btns.find((b) => b.type === 'submit')
+      const b = btns.find((b) => ok.test(txt(b))) || btns.find((b) => next.test(txt(b))) || btns.find((b) => b.type === 'submit' || b.type === 'image')
       if (!b) return null
       b.click()
       return txt(b).slice(0, 20)
