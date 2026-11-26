@@ -431,7 +431,10 @@ export default function KenshoList() {
       /* ignore */
     }
     const it = data.items.find((x) => x.id === kx)
-    const writes = !!it?.xNeeds?.some((n) => ['reply', 'quote', 'hashtag'].includes(n))
+    // 投稿者以外のフォロー（例：@bruno_enjoy と @horinishi_hub をWフォロー）が残っていれば、まだ次へ進まない
+    const author = it ? xPostOf(it)?.user.toLowerCase() : undefined
+    const moreFollows = (it?.xFollows || []).some((h) => h.toLowerCase() !== author)
+    const writes = moreFollows || !!it?.xNeeds?.some((n) => ['reply', 'quote', 'hashtag'].includes(n))
     if (!ok) {
       // 押せなかった：同じ懸賞のまま連続応募モードに戻す
       setKxMsg('自動で押せなかったので、手で押した場合は「応募済みにして次へ」を押してください')
@@ -928,7 +931,7 @@ export default function KenshoList() {
                     location.href = `${xp.url}?kensho=${j}#kensho=${j}`
                   }}
                 >
-                  ワンボタン応募（フォロー{wantRepost ? '・リポスト' : ''}{wantLike ? '・いいね' : ''}）
+                  ワンボタン応募（@{xp.user} をフォロー{wantRepost ? '・リポスト' : ''}{wantLike ? '・いいね' : ''}）
                 </button>
               )}
               {!ext && (
