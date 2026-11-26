@@ -14,6 +14,8 @@ type Item = {
   winners: number | null
   value: number
   prize: string
+  prizeShort?: string
+  image?: string | null
   methods: string[]
   entryUrl: string | null
   score: number
@@ -44,6 +46,18 @@ function writeLS(key: string, v: unknown) {
   } catch {
     /* private mode etc. */
   }
+}
+
+/** カード見出しに出す賞品名（短縮名がなければ説明文/タイトルを短く） */
+function prizeLabel(it: Item): string {
+  if (it.prizeShort) return it.prizeShort
+  const src = (it.prize || it.title).replace(/^[\s、,]+/, '')
+  return src.length > 30 ? src.slice(0, 30) + '…' : src
+}
+
+/** PR TIMES の画像は小さいサイズで取得 */
+function thumb(url: string): string {
+  return url.replace(/width=\d+&height=\d+/, 'width=320&height=320')
 }
 
 function daysLeft(deadline: string | null): number | null {
@@ -367,20 +381,28 @@ export default function KenshoList() {
           const target = it.entryUrl || it.url
           return (
             <li key={it.id} className="k-card">
-              <div className="k-row">
-                <span className="k-score" title="おすすめ度">{it.score}</span>
-                <div className="k-meta">
-                  {it.winners ? <span>{it.winners.toLocaleString()}名</span> : null}
-                  {it.value ? <span>{it.value >= 10000 ? `${it.value / 10000}万円` : `${it.value.toLocaleString()}円`}相当</span> : null}
-                  <span className={d !== null && d <= 3 ? 'k-urgent' : ''}>
-                    {d === null ? '締切不明' : d === 0 ? '今日まで' : `あと${d}日`}
-                  </span>
+              <div className="k-top">
+                {it.image ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img className="k-thumb" src={thumb(it.image)} alt="" loading="lazy" referrerPolicy="no-referrer" />
+                ) : (
+                  <div className="k-thumb k-thumb-empty" aria-hidden="true" />
+                )}
+                <div className="k-head2">
+                  <p className="k-prizename">{prizeLabel(it)}</p>
+                  <div className="k-meta">
+                    {it.winners ? <span className="k-win">{it.winners.toLocaleString()}名</span> : null}
+                    {it.value ? <span>{it.value >= 10000 ? `${it.value / 10000}万円` : `${it.value.toLocaleString()}円`}相当</span> : null}
+                    <span className={d !== null && d <= 3 ? 'k-urgent' : ''}>
+                      {d === null ? '締切不明' : d === 0 ? '今日まで' : `あと${d}日`}
+                    </span>
+                    <span className="k-score" title="おすすめ度">{it.score}</span>
+                  </div>
                 </div>
               </div>
               <a className="k-title" href={it.url} target="_blank" rel="noopener noreferrer">
                 {it.title}
               </a>
-              {it.prize && !it.title.includes(it.prize.slice(2, 22)) && <p className="k-prize">{it.prize}</p>}
               <div className="k-chips">
                 {it.methods.map((m) => (
                   <span key={m} className={`k-chip k-${m}`}>

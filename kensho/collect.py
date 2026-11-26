@@ -198,6 +198,43 @@ def extract_prize(lines: list[str], title: str) -> str:
     return m.group(0) if m else ""
 
 
+# ---- 賞品名（短縮）
+GENERIC = re.compile(r"^(?:豪華|素敵な|すてきな|各種|特別な|オリジナル)?(?:賞品|景品|プレゼント|商品|グッズ|ノベルティ|記念品)$")
+CUT = re.compile(r"[!！?？。】]|[」』](?:が|は)|開催|キャンペーン(?:で|では|を|に)|中から|方に|方へ|方を対象に|対象に|では|には|として|記念して|ので|さらに")
+PATS = [
+    re.compile(r"(?:名様?|名)\s*に\s*[、,]?\s*(.{2,60}?)\s*(?:を|が)\s*(?:各\d+[^\s]{0,3}\s*)?(?:プレゼント|進呈|贈呈|当た)"),
+    re.compile(r"(.{2,60}?)\s*(?:を|が)\s*(?:抽選で)\s*(?:合計|最大|計)?\s*[\d,]+\s*(?:名|組)"),
+    re.compile(r"(.{2,60}?)\s*(?:が|を)\s*(?:抽選で)?\s*(?:合計|最大)?\s*(?:[\d,]+\s*名様?に)?\s*(?:当たる|当たります|もらえる)"),
+    re.compile(r"(.{2,60}?)\s*を\s*(?:工事費込みで|無料で|抽選で)?\s*プレゼント"),
+]
+def _clean_prize(s: str) -> str:
+    s = re.split(CUT, s)[-1]
+    s = re.sub(r"^(?:抽選で|合計|最大|計|\d+名様?に|、|,|の|より|から|\s)+", "", s)
+    s = re.sub(r"^(?:キャンペーン\d*|第\d+弾|数量限定|限定|豪華|人気の?)\s*", "", s)
+    s = s.lstrip(" 　、,・:：-~〜」』）)】]").rstrip(" 　、,・:：-~〜「『（(【[")
+    if s.count("「") < s.count("」"): s = s.replace("」", "", 1)
+    if len(s) > 26:
+        b = re.findall(r"[「『]([^」』]{2,30})[」』]", s)
+        if b: s = b[-1]
+    s = re.sub(r"^[「『]([^」』]*)[」』]$", r"\1", s).strip()
+    return s
+def extract_prize_short(cands: list[str]) -> str:
+    for t in cands:
+        t = norm(t)
+        for p in PATS:
+            for m in p.finditer(t):
+                v = _clean_prize(m.group(1))
+                if 2 <= len(v) <= 40 and not GENERIC.match(v) and not re.search(r"キャンペーン|応募|フォロー|リポスト|投稿", v):
+                    return v
+    return ""
+
+
+def extract_image(page: str) -> str | None:
+    m = re.search(r'<meta[^>]+property="og:image"[^>]+content="([^"]+)"', page) or \
+        re.search(r'<meta[^>]+content="([^"]+)"[^>]+property="og:image"', page)
+    return html.unescape(m.group(1)) if m else None
+
+
 PRIZE_VALUE_RE = re.compile(r"([\d,]+(?:\.\d+)?)\s*(万)?\s*円")
 
 
@@ -366,10 +403,14 @@ def analyze(cand: dict, page: str) -> dict | None:
         "winners": extract_winners(full),
         "value": extract_value(full),
         "prize": extract_prize(lines, cand["title"]),
+        "prizeShort": "",
+        "image": extract_image(page),
         "methods": extract_methods(full),
         "entryUrl": extract_entry_url(frag),
         "addedAt": dt.datetime.now(JST).isoformat(timespec="seconds"),
     }
+    item["prizeShort"] = extract_prize_short(
+        [item["prize"], cand["title"]] + [l for l in lines if re.search(r"プレゼント|当た|賞品|景品", l) and len(l) < 200])
     item["score"] = score(item)
     return item
 
@@ -410,6 +451,12 @@ def main() -> int:
             if c["url"] not in seen_set and c["url"] not in items:
                 cands.setdefault(c["url"], c)
 
+    # 旧形式（賞品名・画像なし）のアイテムを再解析
+    for it in list(items.values()):
+        if "prizeShort" not in it:
+            cands.setdefault(it["url"], {"source": it["source"], "url": it["url"], "title": it["title"],
+                                         "desc": "", "company": it.get("company", ""), "published": it.get("published", "")})
+
     print(f"candidates: {len(cands)}")
     new_items = []
     for n, c in enumerate(list(cands.values())[:MAX_DETAIL_FETCH]):
@@ -420,10 +467,16 @@ def main() -> int:
         seen.append(c["url"])
         seen_set.add(c["url"])
         it = analyze(c, page)
+        old = items.get(c["url"])
         if it:
+            if old:  # 再解析：初出時刻を維持し、新着扱いにしない
+                it["addedAt"] = old.get("addedAt", it["addedAt"])
+            else:
+                new_items.append(it)
             items[it["url"]] = it
-            new_items.append(it)
-            print(f"  + [{it['score']:3d}] {it['title'][:60]}")
+            print(f"  {'~' if old else '+'} [{it['score']:3d}] {it['prizeShort'] or '-'} | {it['title'][:40]}")
+        elif old:
+            del items[c["url"]]
 
     # スコアは締切接近で変わるので毎回再計算
     alive = [it for it in items.values() if is_alive(it)]
