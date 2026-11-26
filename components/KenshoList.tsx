@@ -873,6 +873,15 @@ export default function KenshoList() {
                 <div className="k-compose">
                   {cur.xPrompt && <p className="k-note">条件：{cur.xPrompt}</p>}
                   {manual && <p className="k-warn">答えや写真が必要な条件です。文面を書き換えてから投稿してください。</p>}
+                  {needs?.includes('hashtag') && !(cur.xTags || []).length && !cur.xImageTag && (
+                    <p className="k-warn">
+                      指定のハッシュタグを読み取れませんでした。
+                      <a className="k-link" href={xp.url} target="_blank" rel="noopener noreferrer">
+                        元の投稿
+                      </a>
+                      で確認して、文面に「#〜」を入れてください。
+                    </p>
+                  )}
                   {cur.xImageTag && (
                     <p className="k-warn">
                       指定のハッシュタグは投稿の<b>画像の中</b>に書かれています。

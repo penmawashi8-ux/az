@@ -27,7 +27,7 @@ NEW_PATH = os.environ.get("KENSHO_NEW") or os.path.join(ROOT, "kensho", ".new_it
 JST = dt.timezone(dt.timedelta(hours=9))
 UA = "Mozilla/5.0 (compatible; kensho-collector/1.0; personal RSS reader)"
 FETCH_DELAY = 1.5          # 詳細ページ取得の間隔（秒）
-MAX_DETAIL_FETCH = int(os.environ.get("KENSHO_MAX_FETCH", "100"))
+MAX_DETAIL_FETCH = int(os.environ.get("KENSHO_MAX_FETCH", "200"))
 NO_DEADLINE_TTL_DAYS = 30  # 締切不明のものは公開から30日で消す
 
 FEEDS = [
@@ -35,7 +35,7 @@ FEEDS = [
     ("atpress", "https://www.atpress.ne.jp/rss/index.rdf"),
 ]
 # 解析ルールの版。上げると収集済みの懸賞も次回以降に読み直す
-PARSE_VERSION = 4
+PARSE_VERSION = 5
 
 KEYWORD_PAGES = [
     # チャンスイット：応募先へのリンク(jump.srv)は robots.txt でロボット禁止なので、
@@ -301,10 +301,17 @@ def extract_x_needs(text: str) -> list[str]:
 HASHTAG_RE = re.compile(r"[#＃]([^\s#＃、。,.!！?？「」『』()（）【】\[\]<>＜＞・/／:：;；\"'”’]{2,40})")
 
 
+# 「#」なしで括弧書きされた指定ハッシュタグ（例：ハッシュタグ「雪見だいふく米」、ハッシュタグ【〇〇】）
+BRACKET_TAG_RE = re.compile(r"ハッシュタグ\s*(?:は|:|：)?\s*[「『【\[]\s*[#＃]?([^」』】\]\s#＃]{2,40})\s*[」』】\]]")
+# 「〇〇」をつけて投稿／引用（空白や句読点を含まない短い語はハッシュタグとして付ける書き方が多い）
+ATTACH_TAG_RE = re.compile(r"[「『]([^」』\s、。,.!！?？]{2,30})[」』]\s*を\s*(?:つけ|付け)て")
+
+
 def extract_x_tags(text: str) -> list[str]:
     tags = []
-    for m in HASHTAG_RE.finditer(norm(text)):
-        t = "#" + m.group(1)
+    t0 = norm(text)
+    found = ["#" + m.group(1) for m in HASHTAG_RE.finditer(t0)] + ["#" + m.group(1) for m in BRACKET_TAG_RE.finditer(t0)] + ["#" + m.group(1) for m in ATTACH_TAG_RE.finditer(t0)]
+    for t in found:
         if t not in tags and not re.fullmatch(r"#(PR|pr|拡散希望|プレゼント企画)", t):
             tags.append(t)
     return tags[:5]
@@ -313,13 +320,15 @@ def extract_x_tags(text: str) -> list[str]:
 def extract_x_phrases(text: str) -> list[str]:
     """投稿に入れるよう指定された文言（例：「これからもローソンプリント」＆コメントを入れて引用ポスト）"""
     out = []
-    for sent in re.split(r"[\n。]|[①-⑩]", norm(text)):
+    for sent in re.split(r"[\n。]|[①-⑩]|(?<!\d)(?=[1-9](?:[.．、)）:：⃣]|\s*@))", norm(text)):
         if not re.search(r"引用|返信|リプライ|コメント|投稿|ポスト|入れて|付けて|つけて|添えて", sent):
             continue
         for m in re.finditer(r"[「『]([^」』]{2,40})[」』]", sent):
             ph = m.group(1).strip()
             if ph.startswith(("#", "＃")) or re.search(r"キャンペーン$|プレゼント$", ph):
                 continue
+            if re.search(r"ハッシュタグ\s*(?:は|:|：)?\s*$", sent[:m.start()]) or re.match(r"\s*を\s*(?:つけ|付け)て", sent[m.end():]):
+                continue  # ハッシュタグとして別に扱う
             if ph not in out:
                 out.append(ph)
     return out[:3]
