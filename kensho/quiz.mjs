@@ -12,9 +12,22 @@ export async function collectQuiz(frame) {
     const hint = new RegExp(hintSrc)
     const visible = (el) => !!(el.offsetWidth || el.offsetHeight || el.getClientRects().length)
     const ctxOf = (el) => {
-      const box = el.closest('fieldset, tr, dl, li, .form-group, .question, [role=listitem]') || el.parentElement?.parentElement || el.parentElement
-      return (box?.innerText || '').replace(/\s+/g, ' ').trim().slice(0, 300)
+      // 入力欄から親をたどり、問題文を含む最小のまとまり（設問ブロック）を探す。フォーム全体まで来たら止める
+      let x = el.parentElement
+      for (let k = 0; x && k < 6 && x.tagName !== 'FORM' && x.tagName !== 'BODY'; k++, x = x.parentElement) {
+        const t = (x.innerText || '').replace(/\s+/g, ' ').trim()
+        if (t.length > 1500) break
+        if (hint.test(t)) return t.slice(0, 600)
+      }
+      const box = el.closest('fieldset, tr, dl, li, p, .form-group, .question, [role=listitem]') || el.parentElement
+      return (box?.innerText || '').replace(/\s+/g, ' ').trim().slice(-500)
     }
+    // 年齢・都道府県・性別・生年月日など個人情報の欄はクイズではない
+    const PERSONAL = /age|pref|state|sex|gender|birth|year|month|day|zip|post|tel|phone|mail|name|addr|kana|job|occupation|年齢|都道府県|性別|生年|誕生|職業|住所|電話|氏名|名前/i
+    const isPersonal = (el, opts) =>
+      PERSONAL.test(`${el.name} ${el.id}`) ||
+      (opts.length >= 40 && opts.includes('東京都')) ||
+      opts.filter((o) => /^\d+代|代以上$|男性|女性/.test(o)).length >= 2
     const labelText = (el) => ((el.labels && el.labels[0]?.innerText) || el.getAttribute('aria-label') || el.value || '').replace(/\s+/g, ' ').trim()
     const qs = []
     let n = 0
@@ -26,6 +39,7 @@ export async function collectQuiz(frame) {
     })
     groups.forEach((els) => {
       if (els.length < 2) return
+      if (isPersonal(els[0], els.map(labelText))) return
       const ctx = ctxOf(els[0])
       if (!hint.test(ctx)) return
       const id = `q${n++}`
@@ -35,11 +49,12 @@ export async function collectQuiz(frame) {
     // セレクト
     document.querySelectorAll('select').forEach((el) => {
       if (el.disabled || !visible(el)) return
+      const opts = Array.from(el.options).filter((o) => o.value).map((o) => o.text.trim())
+      if (isPersonal(el, opts)) return
       const ctx = ctxOf(el)
       if (!hint.test(ctx)) return
       const id = `q${n++}`
       el.setAttribute('data-kensho-q', id)
-      const opts = Array.from(el.options).filter((o) => o.value).map((o) => o.text.trim())
       if (opts.length >= 2) qs.push({ id, kind: 'select', question: ctx, options: opts })
     })
     // Googleフォーム等の role=radiogroup

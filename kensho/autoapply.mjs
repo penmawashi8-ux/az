@@ -48,11 +48,11 @@ const needsReapply = (a) =>
 const NO_DUP = /(重複|複数回|二重|同一人物|同一の方)[^。]{0,25}(応募|エントリー)?[^。]{0,25}(無効|禁止|不可|できません|お断り|認め|対象外|取り消)|(お?一人様?|おひとり様?|1人|１人|お一人)\s*(につき)?\s*(1|１|一)\s*(回|口)(限り|まで|のみ)?/
 
 // ロボットの版。上げると「フォームが見つからない」等でスキップした懸賞に再挑戦する
-const BOT_VERSION = 8
+const BOT_VERSION = 9
 const RETRYABLE = /フォームが見つからない|入力欄が個人情報フォームでない|必須項目が埋められない|クイズに答えられない/
-const ENTRY_LINK = /応募フォーム|応募する|応募はこちら|ご応募はこちら|応募ページ|エントリー|参加する|アンケートに(回答|答え)|アンケートはこちら|今すぐ応募|応募画面|フォームへ|応募へ|^\s*応募\s*$|ENTRY|Entry|APPLY|Apply|応募受付|応募ボタン|プレゼントに応募|キャンペーンに参加/
-const ENTRY_NG = /応募要項|応募規約|応募方法|応募資格|応募条件|注意事項|当選発表|よくある|FAQ|プライバシー/
-const FORM_HREF = /forms\.gle\/|docs\.google\.com\/forms|form\.run\/|formzu|questant\.jp|forms\.office\.com|tayori\.com\/form|formmailer|cuenote|\/(entry|apply|enquete|questionnaire|form)(\/|\.|\?|$)/i
+const ENTRY_LINK = /応募フォーム|応募する|申し込む|申込む|申込み|お申し込み|エントリーする|[^要規方資条]?応募$|会場に応募|に応募|応募はこちら|ご応募はこちら|応募ページ|エントリー|参加する|アンケートに(回答|答え)|アンケートはこちら|今すぐ応募|応募画面|フォームへ|応募へ|^\s*応募\s*$|ENTRY|Entry|APPLY|Apply|応募受付|応募ボタン|プレゼントに応募|キャンペーンに参加/
+const ENTRY_NG = /応募要項|応募規約(?!に同意)|応募方法|応募資格|応募条件|注意事項|当選発表|よくある|FAQ|プライバシー|試乗|来店予約|予約|資料請求|お問い?合わ?せ|購入|カート|会員登録|ログイン|ダウンロード|アプリ/
+const FORM_HREF = /forms\.gle\/|docs\.google\.com\/forms|form\.run\/|formzu|questant\.jp|forms\.office\.com|tayori\.com\/form|formmailer|form-mailer\.jp|forms\.cloud\.microsoft|msgs\.jp\/webapp\/form|cuenote|\/(entry|apply|enquete|questionnaire|form)(\/|\.|\?|$)/i
 const NO_AUTO = /(自動|機械的|プログラム|ツール|ボット|bot|スクリプト|代行)[^。]{0,30}(応募|エントリー|参加)[^。]{0,30}(禁止|無効|お断り|認め|できません|対象外|取り消)/i
 const DONE = /応募(が|を)?(完了|受け付け|受付)|受け?付けました|受付(が|を)?完了|送信(が|を)?完了|ご応募(いただき|頂き)|ありがとうございました|ありがとうございます|エントリー(が|を)?完了|thank\s*you/i
 const NG_BTN = /戻る|修正|キャンセル|リセット|クリア|ログイン|検索|シェア|閉じる|会員登録|新規登録/
@@ -120,6 +120,12 @@ async function findForm(page) {
   for (let hop = 0; hop < 3; hop++) {
     const { frame, inputs } = await bestFrame(page)
     if (frame && inputs >= 2) return { page, frame }
+    // 遅れて描画されるフォーム（form.run 等）を待ってもう一度
+    await page.waitForTimeout(4000)
+    {
+      const again = await bestFrame(page)
+      if (again.frame && again.inputs >= 2) return { page, frame: again.frame }
+    }
     if (hop === 2) break
     // 遅延読み込みの部分も出すため最後までスクロール
     await page.evaluate(async () => {
@@ -144,8 +150,10 @@ async function findForm(page) {
           return t.length <= 40 && re.test(t) && !ng.test(t)
         }
         // 1) フォームサービスへの直リンク 2) 応募ボタン（表示中を優先）
-        let el = els.find((e) => e.tagName === 'A' && formRe.test(e.href) && e.href.split('#')[0] !== here)
-        if (!el) el = els.find((e) => ok(e) && (e.offsetWidth || e.offsetHeight)) || els.find((e) => ok(e) && e.tagName === 'A')
+        // 1) 文言が応募ボタンらしいもの（表示中優先） 2) 文言が問題ない、フォームサービスへの直リンク
+        // （「試乗予約」等のフォームに誤って入らないよう、URLだけでは選ばない）
+        let el = els.find((e) => ok(e) && (e.offsetWidth || e.offsetHeight)) || els.find((e) => ok(e) && e.tagName === 'A')
+        if (!el) el = els.find((e) => e.tagName === 'A' && formRe.test(e.href) && e.href.split('#')[0] !== here && !ng.test(label(e)))
         if (!el) return null
         return el.tagName === 'A' ? { href: el.href } : { click: true, idx: els.indexOf(el) }
       },
@@ -255,6 +263,8 @@ async function applyOne(it, reapply = false) {
       return { status: 'skip', reason: '応募フォームではない（問い合わせ/会員登録等）' }
     const text = await pageText(p)
     if (NO_AUTO.test(text)) return { status: 'skip', reason: '規約で自動応募禁止' }
+    if (/試乗(予約|いただ|された|して)|来店(予約|いただ|された)|ご来場いただいた方/.test(`${landing}\n${text}`))
+      return { status: 'skip', reason: '試乗・来店などが条件' }
     // 怪しい懸賞・危険なフォームには個人情報を入れない
     const risk = await checkRisk(p, frame, `${landing}\n${text}`)
     if (risk) return { status: 'skip', reason: `安全のため応募せず(${risk})` }
