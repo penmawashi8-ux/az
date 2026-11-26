@@ -79,3 +79,12 @@ body:has(.kensho) { background: var(--k-bg, #f6f7f9); }
 .k-toast button { color: inherit; font-weight: 600; }
 .k-check { display: block; font-size: 13px; margin: 10px 0 2px; line-height: 1.5; }
 .k-grid label:last-child { grid-column: 1 / -1; }
+.k-tabs button { white-space: nowrap; }
+.k-runall { display: block; width: 100%; margin-bottom: 12px; padding: 12px; }
+.k-modal { position: fixed; inset: 0; background: rgba(0,0,0,.45); display: flex; align-items: flex-end; justify-content: center; z-index: 50; }
+.k-sheet { background: var(--k-card); color: var(--k-text); width: 100%; max-width: 640px; border-radius: 16px 16px 0 0; padding: 14px 16px calc(16px + env(safe-area-inset-bottom)); }
+.k-sheet-head { display: flex; justify-content: space-between; align-items: center; font-size: 13px; color: var(--k-muted); margin-bottom: 10px; font-variant-numeric: tabular-nums; }
+.k-sheet-head button { font-size: 20px; padding: 0 6px; color: var(--k-muted); }
+.k-steps { display: flex; flex-direction: column; gap: 8px; margin: 6px 0 4px; }
+.k-step { display: block; text-align: center; padding: 12px; border-radius: 10px; border: 1.5px solid var(--k-accent); color: var(--k-accent); font-weight: 700; font-size: 15px; }
+.k-step.done { background: var(--k-chip); border-color: var(--k-line); color: var(--k-muted); }

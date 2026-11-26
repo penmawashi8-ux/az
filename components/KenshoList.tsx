@@ -16,6 +16,7 @@ type Item = {
   prize: string
   prizeShort?: string
   image?: string | null
+  xPost?: string | null
   methods: string[]
   entryUrl: string | null
   score: number
@@ -24,7 +25,7 @@ type Item = {
 
 type Data = { updatedAt: string; methodLabels: Record<string, string>; items: Item[] }
 type Mark = 'applied' | 'hidden'
-type Tab = 'todo' | 'applied' | 'hidden'
+type Tab = 'todo' | 'x' | 'applied' | 'hidden'
 
 // GitHub Actions が毎時更新する kensho-data ブランチ
 const DATA_URL = 'https://raw.githubusercontent.com/penmawashi8-ux/az/kensho-data/data.json'
@@ -59,6 +60,18 @@ function prizeLabel(it: Item): string {
 function thumb(url: string): string {
   return url.replace(/width=\d+&height=\d+/, 'width=320&height=320')
 }
+
+const X_STATUS = /^https?:\/\/(?:www\.|mobile\.)?(?:x|twitter)\.com\/([A-Za-z0-9_]{1,15})\/status(?:es)?\/(\d+)/
+
+/** Xキャンペーンの告知ポスト（アカウント名とポストID） */
+function xPostOf(it: Item): { user: string; id: string; url: string } | null {
+  for (const u of [it.xPost, it.entryUrl]) {
+    const m = u ? X_STATUS.exec(u) : null
+    if (m) return { user: m[1], id: m[2], url: `https://x.com/${m[1]}/status/${m[2]}` }
+  }
+  return null
+}
+const isX = (it: Item) => it.methods.includes('x') && !!xPostOf(it)
 
 function daysLeft(deadline: string | null): number | null {
   if (!deadline) return null
@@ -249,6 +262,8 @@ export default function KenshoList() {
   const [profile, setProfile] = useState<Record<string, string>>({})
   const [showProfile, setShowProfile] = useState(false)
   const [undo, setUndo] = useState<{ id: string; prev?: Mark } | null>(null)
+  // 連続応募モード（X）：対象IDのキューと現在位置、押したステップ
+  const [run, setRun] = useState<{ queue: string[]; i: number; done: Record<string, boolean> } | null>(null)
 
   useEffect(() => {
     setMarks(readLS(MARKS_KEY, {}))
@@ -278,7 +293,9 @@ export default function KenshoList() {
     if (!data) return []
     let xs = data.items.filter((it) => {
       const m = marks[it.id]
-      if (tab === 'todo') return !m && !(hidePurchase && it.methods.includes('purchase'))
+      const visible = !(hidePurchase && it.methods.includes('purchase'))
+      if (tab === 'todo') return !m && visible && !isX(it)
+      if (tab === 'x') return !m && visible && isX(it)
       return m === tab
     })
     if (sort === 'deadline') xs = [...xs].sort((a, b) => (a.deadline || '9999').localeCompare(b.deadline || '9999'))
@@ -286,11 +303,11 @@ export default function KenshoList() {
   }, [data, marks, tab, hidePurchase, sort])
 
   const counts = useMemo(() => {
-    const c = { todo: 0, applied: 0, hidden: 0 }
+    const c = { todo: 0, x: 0, applied: 0, hidden: 0 }
     data?.items.forEach((it) => {
       const m = marks[it.id]
       if (m) c[m]++
-      else if (!(hidePurchase && it.methods.includes('purchase'))) c.todo++
+      else if (!(hidePurchase && it.methods.includes('purchase'))) c[isX(it) ? 'x' : 'todo']++
     })
     return c
   }, [data, marks, hidePurchase])
@@ -308,9 +325,9 @@ export default function KenshoList() {
       </header>
 
       <nav className="k-tabs" role="tablist">
-        {(['todo', 'applied', 'hidden'] as Tab[]).map((t) => (
+        {(['todo', 'x', 'applied', 'hidden'] as Tab[]).map((t) => (
           <button key={t} role="tab" aria-selected={tab === t} className={tab === t ? 'on' : ''} onClick={() => setTab(t)}>
-            {t === 'todo' ? '未応募' : t === 'applied' ? '応募済み' : 'スキップ'}
+            {t === 'todo' ? '未応募' : t === 'x' ? 'X' : t === 'applied' ? '応募済み' : 'スキップ'}
             <span className="k-count">{counts[t]}</span>
           </button>
         ))}
@@ -375,6 +392,12 @@ export default function KenshoList() {
       {error && <p className="k-empty">データを読み込めませんでした（{error}）</p>}
       {data && items.length === 0 && <p className="k-empty">{tab === 'todo' ? '新しい懸賞はありません。次の更新を待ちましょう。' : 'まだありません。'}</p>}
 
+      {tab === 'x' && items.length > 0 && (
+        <button className="k-btn primary k-runall" onClick={() => setRun({ queue: items.map((i) => i.id), i: 0, done: {} })}>
+          連続応募モード（{items.length}件）
+        </button>
+      )}
+
       <ul className="k-list">
         {items.map((it) => {
           const d = daysLeft(it.deadline)
@@ -384,7 +407,7 @@ export default function KenshoList() {
               <div className="k-top">
                 {it.image ? (
                   // eslint-disable-next-line @next/next/no-img-element
-                  <img className="k-thumb" src={thumb(it.image)} alt="" loading="lazy" referrerPolicy="no-referrer" />
+                  <img className="k-thumb" src={thumb(it.image)} alt="" loading="lazy" referrerPolicy="no-referrer" onError={(e) => (e.currentTarget.style.visibility = 'hidden')} />
                 ) : (
                   <div className="k-thumb k-thumb-empty" aria-hidden="true" />
                 )}
@@ -412,7 +435,16 @@ export default function KenshoList() {
                 {it.company && <span className="k-company">{it.company}</span>}
               </div>
               <div className="k-actions">
-                {tab === 'todo' ? (
+                {tab === 'x' ? (
+                  <>
+                    <a className="k-btn primary" href={xPostOf(it)!.url} target="_blank" rel="noopener noreferrer" onClick={() => mark(it.id, 'applied')}>
+                      投稿を開く
+                    </a>
+                    <button className="k-btn" onClick={() => mark(it.id, 'hidden')}>
+                      スキップ
+                    </button>
+                  </>
+                ) : tab === 'todo' ? (
                   <>
                     <a
                       className="k-btn primary"
@@ -437,6 +469,77 @@ export default function KenshoList() {
           )
         })}
       </ul>
+
+      {run && data && (() => {
+        const cur = data.items.find((x) => x.id === run.queue[run.i])
+        const xp = cur && xPostOf(cur)
+        const finish = (m?: Mark) => {
+          if (cur && m) mark(cur.id, m, false)
+          if (run.i + 1 >= run.queue.length) setRun(null)
+          else setRun({ ...run, i: run.i + 1, done: {} })
+        }
+        if (!cur || !xp) return null
+        const step = (key: string, label: string, href: string) => (
+          <a
+            className={`k-step ${run.done[key] ? 'done' : ''}`}
+            href={href}
+            target="_blank"
+            rel="noopener noreferrer"
+            onClick={() => setRun({ ...run, done: { ...run.done, [key]: true } })}
+          >
+            {run.done[key] ? '✓ ' : ''}
+            {label}
+          </a>
+        )
+        return (
+          <div className="k-modal" role="dialog" aria-modal="true" aria-label="連続応募モード">
+            <div className="k-sheet">
+              <div className="k-sheet-head">
+                <span>
+                  {run.i + 1} / {run.queue.length}
+                </span>
+                <button aria-label="閉じる" onClick={() => setRun(null)}>
+                  ×
+                </button>
+              </div>
+              <div className="k-top">
+                {cur.image ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img className="k-thumb" src={thumb(cur.image)} alt="" referrerPolicy="no-referrer" onError={(e) => (e.currentTarget.style.visibility = 'hidden')} />
+                ) : (
+                  <div className="k-thumb k-thumb-empty" aria-hidden="true" />
+                )}
+                <div className="k-head2">
+                  <p className="k-prizename">{prizeLabel(cur)}</p>
+                  <div className="k-meta">
+                    {cur.winners ? <span className="k-win">{cur.winners.toLocaleString()}名</span> : null}
+                    <span>{daysLeft(cur.deadline) === null ? '締切不明' : `あと${daysLeft(cur.deadline)}日`}</span>
+                  </div>
+                </div>
+              </div>
+              <div className="k-steps">
+                {step('follow', `① @${xp.user} をフォロー`, `https://x.com/intent/follow?screen_name=${xp.user}`)}
+                {step('rt', '② リポスト', `https://x.com/intent/retweet?tweet_id=${xp.id}`)}
+                {step('like', '③ いいね', `https://x.com/intent/like?tweet_id=${xp.id}`)}
+              </div>
+              <p className="k-note">
+                引用・返信・ハッシュタグが条件のこともあります。
+                <a className="k-link" href={xp.url} target="_blank" rel="noopener noreferrer">
+                  投稿を開いて条件を確認
+                </a>
+              </p>
+              <div className="k-actions">
+                <button className="k-btn primary" onClick={() => finish('applied')}>
+                  応募済みにして次へ
+                </button>
+                <button className="k-btn" onClick={() => finish('hidden')}>
+                  スキップ
+                </button>
+              </div>
+            </div>
+          </div>
+        )
+      })()}
 
       {undo && (
         <div className="k-toast" role="status">

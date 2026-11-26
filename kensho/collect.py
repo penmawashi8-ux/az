@@ -229,6 +229,15 @@ def extract_prize_short(cands: list[str]) -> str:
     return ""
 
 
+X_STATUS_RE = re.compile(r"https?://(?:www\.|mobile\.)?(?:x|twitter)\.com/([A-Za-z0-9_]{1,15})/status(?:es)?/(\d{5,25})")
+
+
+def extract_x_post(frag: str) -> str | None:
+    """本文中で最初に出てくるXのポストURL（キャンペーン告知投稿）"""
+    m = X_STATUS_RE.search(html.unescape(frag))
+    return f"https://x.com/{m.group(1)}/status/{m.group(2)}" if m else None
+
+
 def extract_image(page: str) -> str | None:
     m = re.search(r'<meta[^>]+property="og:image"[^>]+content="([^"]+)"', page) or \
         re.search(r'<meta[^>]+content="([^"]+)"[^>]+property="og:image"', page)
@@ -405,6 +414,7 @@ def analyze(cand: dict, page: str) -> dict | None:
         "prize": extract_prize(lines, cand["title"]),
         "prizeShort": "",
         "image": extract_image(page),
+        "xPost": extract_x_post(frag),
         "methods": extract_methods(full),
         "entryUrl": extract_entry_url(frag),
         "addedAt": dt.datetime.now(JST).isoformat(timespec="seconds"),
@@ -453,7 +463,7 @@ def main() -> int:
 
     # 旧形式（賞品名・画像なし）のアイテムを再解析
     for it in list(items.values()):
-        if "prizeShort" not in it:
+        if "prizeShort" not in it or "xPost" not in it:
             cands.setdefault(it["url"], {"source": it["source"], "url": it["url"], "title": it["title"],
                                          "desc": "", "company": it.get("company", ""), "published": it.get("published", "")})
 
