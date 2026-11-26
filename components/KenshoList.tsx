@@ -587,7 +587,10 @@ export default function KenshoList() {
                   href={next.href}
                   target="_blank"
                   rel="noopener noreferrer"
-                  onClick={() => {
+                  onClick={(e) => {
+                    // 状態更新で href が次の手順に書き換わる前に、今の手順のURLを確実に開く
+                    e.preventDefault()
+                    window.open(next.href, '_blank', 'noopener')
                     const done = { ...run.done, [next.key]: true }
                     if (si === steps.length - 1 && extra.length === 0) {
                       // 最後の手順：開いたら自動で応募済みにして次へ
