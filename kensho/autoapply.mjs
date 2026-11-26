@@ -309,6 +309,8 @@ async function applyOne(it, reapply = false) {
           .evaluate(() => Array.from(document.querySelectorAll('button, input[type=submit], input[type=image], input[type=button], a[role=button], [role=button]')).map((b) => `${b.tagName}:${b.type || ''}:${(b.value || b.textContent || b.alt || '').replace(/\s+/g, '').slice(0, 15)}:${b.offsetWidth}x${b.offsetHeight}:${b.disabled ? 'dis' : ''}`).slice(0, 10))
           .catch((e) => [String(e).slice(0, 60)])
         console.log('   buttons', new URL(frame.url()).pathname, JSON.stringify(bh))
+        // 2回目以降（＝1回は送信済み）なら、二重送信を防ぐため「送信済み・完了未確認」として記録し再挑戦しない
+        if (round > 0) return { status: 'unknown', reason: '送信後の画面で完了を確認できず', trace }
         return { status: 'fail', reason: '送信ボタンが見つからない' }
       }
       await p.waitForLoadState('networkidle', { timeout: 15000 }).catch(() => {})
