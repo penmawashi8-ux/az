@@ -123,7 +123,10 @@ const PROFILE_FIELDS: { key: string; label: string; placeholder: string }[] = [
 
 /** 応募フォームに自動入力するブックマークレット（プロフィールは端末内だけに埋め込む） */
 function buildBookmarklet(p: Record<string, string>): string {
-  const fn = (P: Record<string, string>) => {
+  const fn = (P0: Record<string, string>) => {
+    // 全角数字などを半角に揃える
+    const P: Record<string, string> = {}
+    for (const [k, v] of Object.entries(P0 || {})) P[k] = typeof v === 'string' ? v.normalize('NFKC').trim() : v
     const full = (P.sei || '') + (P.mei || '')
     const fullKana = (P.seiKana || '') + (P.meiKana || '')
     const addr = (P.pref || '') + (P.city || '') + (P.addr || '')

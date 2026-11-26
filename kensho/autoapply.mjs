@@ -48,7 +48,7 @@ const needsReapply = (a) =>
 const NO_DUP = /(重複|複数回|二重|同一人物|同一の方)[^。]{0,25}(応募|エントリー)?[^。]{0,25}(無効|禁止|不可|できません|お断り|認め|対象外|取り消)|(お?一人様?|おひとり様?|1人|１人|お一人)\s*(につき)?\s*(1|１|一)\s*(回|口)(限り|まで|のみ)?/
 
 // ロボットの版。上げると「フォームが見つからない」等でスキップした懸賞に再挑戦する
-const BOT_VERSION = 3
+const BOT_VERSION = 4
 const RETRYABLE = /フォームが見つからない|入力欄が個人情報フォームでない|必須項目が埋められない|クイズに答えられない/
 const ENTRY_LINK = /応募フォーム|応募する|応募はこちら|ご応募はこちら|応募ページ|エントリー|参加する|アンケートに(回答|答え)|アンケートはこちら|今すぐ応募|応募画面|フォームへ|応募へ|^\s*応募\s*$|ENTRY|Entry|APPLY|Apply|応募受付|応募ボタン|プレゼントに応募|キャンペーンに参加/
 const ENTRY_NG = /応募要項|応募規約|応募方法|応募資格|応募条件|注意事項|当選発表|よくある|FAQ|プライバシー/
@@ -182,7 +182,7 @@ async function clickSubmit(frame) {
 }
 
 // ログ・記録に個人情報が残らないよう、プロフィールの値を伏せる
-const SECRETS = Object.values(profile).filter((v) => typeof v === 'string' && v.length >= 2)
+const SECRETS = Object.values(profile).filter((v) => typeof v === 'string' && v.length >= 2).flatMap((v) => [v, v.normalize('NFKC'), v.normalize('NFKC').replace(/\D/g, '')].filter((x) => x.length >= 2))
 function mask(t) {
   let out = t || ''
   for (const v of SECRETS) out = out.split(v).join('***')

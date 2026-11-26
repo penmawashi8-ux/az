@@ -1,7 +1,11 @@
 // ブラウザ内で実行するフォーム入力関数（autoapply.mjs から page.evaluate で呼ぶ）。
 // 画面のブックマークレット（components/KenshoList.tsx）と同じ判定ルール。
 // 戻り値には個人情報を含めない（ログに出るため）。
-;(P) => {
+;(P0) => {
+  // 全角数字・全角英字（ＩＭＥで入力したプロフィール）を半角に揃える
+  const P = {}
+  for (const [k, v] of Object.entries(P0 || {})) P[k] = typeof v === 'string' ? v.normalize('NFKC').trim() : v
+  if (P.email) P.email = P.email.replace(/\s+/g, '')
   const full = (P.sei || '') + (P.mei || '')
   const fullKana = (P.seiKana || '') + (P.meiKana || '')
   const addr = (P.pref || '') + (P.city || '') + (P.addr || '')
