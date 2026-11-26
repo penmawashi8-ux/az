@@ -547,6 +547,9 @@ export default function KenshoList() {
                       </div>
                       {h.status === 'unknown' && <p className="k-bot">送信済み（完了画面は確認できず）</p>}
                       {h.note && <p className="k-bot">{h.note}</p>}
+                      {OKS.includes(h.status) && h.reason && h.reason !== '完了画面を確認できず' && (
+                        <p className="k-bot">{h.reason.replace(/^・/, '').replace('メール欄なし', '応募フォームにメール欄なし（確認メールは届きません）')}</p>
+                      )}
                       {!OKS.includes(h.status) && (
                         <p className="k-bot k-bot-skip">
                           {BOT_LABEL[h.status]}

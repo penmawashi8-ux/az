@@ -181,7 +181,19 @@ async function clickSubmit(frame) {
   )
 }
 
+// ログ・記録に個人情報が残らないよう、プロフィールの値を伏せる
+const SECRETS = Object.values(profile).filter((v) => typeof v === 'string' && v.length >= 2)
+function mask(t) {
+  let out = t || ''
+  for (const v of SECRETS) out = out.split(v).join('***')
+  return out.replace(/[\w.+-]+@[\w-]+\.[\w.]+/g, '***@***').replace(/\d{2,4}-?\d{2,4}-?\d{3,4}/g, '***')
+}
+// 自分の情報では答えられない項目（出産予定日・会員番号・希望店舗など）→ 応募資格がない可能性
+const UNFILLABLE = /予定日|お子様|子ども|子供|学年|学校名|会員番号|会員ID|お客様番号|店舗|店名|シリアル|コード|レシート|購入日|購入店|expected|due_?date|member_?(no|id)|shop|store|serial|receipt|child|kids/i
+
 async function applyOne(it, reapply = false) {
+  const trace = []
+  let hasEmail = false
   const page = await ctx.newPage()
   page.on('dialog', (d) => d.accept().catch(() => {}))
   try {
@@ -225,24 +237,45 @@ async function applyOne(it, reapply = false) {
       if (r.login) return { status: 'skip', reason: 'ログインが必要' }
       if (r.captcha) return { status: 'skip', reason: '画像認証あり' }
       if (round === 0 && r.filled === 0) return { status: 'skip', reason: '入力欄が個人情報フォームでない' }
+      if (round === 0) {
+        const info = await frame.evaluate((src) => {
+          const re = new RegExp(src)
+          const vis = (e) => !!(e.offsetWidth || e.offsetHeight)
+          const lab = (e) => `${e.name} ${e.id} ${e.placeholder || ''} ${(e.labels && e.labels[0]?.innerText) || ''} ${(e.closest('tr, dl, li, .form-group, label')?.innerText || e.parentElement?.innerText || '').slice(0, 40)}`
+          const fields = Array.from(document.querySelectorAll('input[type=text], input:not([type]), input[type=date], input[type=number], textarea')).filter(vis)
+          return {
+            email: !!document.querySelector('input[type=email], input[name*=mail i], input[id*=mail i]'),
+            blank: fields.filter((e) => !e.value && re.test(lab(e))).map((e) => (e.name || e.id).slice(0, 20)),
+          }
+        }, UNFILLABLE.source)
+        hasEmail = info.email
+        if (info.blank.length) return { status: 'skip', reason: `答えられない項目あり(${info.blank.slice(0, 3).join(',')})` }
+      }
       if (r.missing.length) return { status: 'skip', reason: `必須項目が埋められない(${r.missing.slice(0, 3).join(',')})` }
       if (!SUBMIT) return { status: 'dry-ok', reason: `入力${r.filled}・アンケート${r.survey}・同意${r.consent}${quizNote}` }
 
       const before = p.url()
+      const beforeText = await pageText(p)
       const btn = await clickSubmit(frame)
       if (!btn) return { status: 'fail', reason: '送信ボタンが見つからない' }
       await p.waitForLoadState('networkidle', { timeout: 15000 }).catch(() => {})
       await p.waitForTimeout(1500)
       const after = await pageText(p)
-      if (DONE.test(after) && !/(必須|入力してください|正しく入力|エラー)/.test(after.slice(0, 2000))) {
-        return { status: 'applied', reason: (/メール.{0,10}(確認|認証|届)/.test(after) ? '確認メールあり' : '') + quizNote }
+      // 送信後に新しく現れた文言だけで完了を判定（ページに元々ある「応募完了」等の宣伝文に反応しない）
+      const seen = new Set(beforeText.split('\n').map((l) => l.trim()))
+      const fresh = after.split('\n').map((l) => l.trim()).filter((l) => l && !seen.has(l)).join('\n')
+      trace.push(`${round}:${btn}→${new URL(p.url()).pathname.slice(0, 40)} ${mask(fresh).replace(/\s+/g, ' ').slice(0, 120)}`)
+      if (/(必須|入力してください|正しく入力|エラー|不正)/.test(fresh.slice(0, 1500))) return { status: 'fail', reason: '送信時に入力エラー', trace }
+      if (DONE.test(fresh)) {
+        return { status: 'applied', reason: (/メール.{0,10}(確認|認証|届|送信)/.test(fresh) ? '確認メールあり' : '') + quizNote + (hasEmail ? '' : '・メール欄なし'), trace }
       }
+      // 画面が変わらなければ二重送信しないよう、ここで止める
+      if (p.url() === before && !fresh.trim()) break
       // 確認画面など：次のフレームを探してもう一度
       const nf = await bestFrame(p)
       frame = nf.frame || p.mainFrame()
-      if (p.url() === before && round > 0 && !nf.frame) break
     }
-    return { status: 'unknown', reason: '完了画面を確認できず' }
+    return { status: 'unknown', reason: '完了画面を確認できず', trace }
   } catch (e) {
     return { status: 'fail', reason: String(e.message || e).split('\n')[0].slice(0, 80) }
   } finally {
