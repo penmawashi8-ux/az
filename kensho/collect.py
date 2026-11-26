@@ -35,6 +35,10 @@ FEEDS = [
     ("atpress", "https://www.atpress.ne.jp/rss/index.rdf"),
 ]
 KEYWORD_PAGES = [
+    # チャンスイット：応募先へのリンク(jump.srv)は robots.txt でロボット禁止なので、
+    # 一覧に載せて本人がタップして応募する（自動応募はしない）
+    ("chance", "https://www.chance.com/present/list/easy-entry/"),
+    ("chance", "https://www.chance.com/present/list/?order=1"),
     # 公募ガイド：Web応募フォームの懸賞が多い。ジャンル別ページも全部見る
     *[("koubo", f"https://koubo.jp/category/present/{c}") for c in (
         "all", "baby", "entertainment", "fashion", "food", "gift-certificate", "life",
@@ -122,6 +126,10 @@ def parse_rss(source: str, xml: str) -> list[dict]:
 
 
 def parse_keyword_page(source: str, page: str) -> list[dict]:
+    if source == "chance":
+        ids = list(dict.fromkeys(re.findall(r'/present/detail/(\d+)/', page)))
+        return [{"source": "chance", "url": f"https://www.chance.com/present/detail/{i}/", "title": "", "desc": "",
+                 "company": "", "published": ""} for i in ids]
     if source == "koubo":
         ids = list(dict.fromkeys(re.findall(r'href="/contest/(\d+)"', page)))
         return [{"source": "koubo", "url": f"https://koubo.jp/contest/{i}", "title": "", "desc": "",
@@ -480,7 +488,71 @@ def analyze_koubo(cand: dict, page: str) -> dict | None:
     return item
 
 
+CHANCE_LABELS = ["プレゼント内容", "当選者数", "応募締切", "主催者", "応募形式", "カテゴリー"]
+CHANCE_METHOD = [("x", r"X|Twitter"), ("instagram", r"Instagram|インスタ"), ("line", r"LINE"), ("tiktok", r"TikTok"),
+                 ("survey", r"アンケート"), ("form", r"WEB|Web|ウェブ|メール|アンケート|クイズ"),
+                 ("purchase", r"レシート|購入|クローズド"), ("hagaki", r"ハガキ|はがき")]
+
+
+def analyze_chance(cand: dict, page: str) -> dict | None:
+    lines = html_to_lines(page)
+    try:
+        st = lines.index("プレゼント内容")
+    except ValueError:
+        return None
+    f: dict[str, list[str]] = {}
+    cur = None
+    for l in lines[st: st + 80]:
+        if l in CHANCE_LABELS:
+            cur = l
+        elif l.startswith("掲載日"):
+            cur = "_desc"
+        elif l.startswith("お得な情報満載") or l.startswith("他にも、"):
+            break
+        elif cur:
+            f.setdefault(cur, []).append(l)
+    prize = " ".join(f.get("プレゼント内容", []))[:120]
+    how = " ".join(f.get("応募形式", []))
+    desc = " ".join(f.get("_desc", []))[:400]
+    ds = find_dates(" ".join(f.get("応募締切", [])), TODAY)
+    deadline = ds[0][1].isoformat() if ds else None
+    if deadline and dt.date.fromisoformat(deadline) < TODAY:
+        return None
+    methods = [k for k, pat in CHANCE_METHOD if re.search(pat, how)]
+    if re.search(r"購入|レシート|お買い上げ", desc) and "purchase" not in methods:
+        methods.append("purchase")
+    cid = re.search(r"/detail/(\d+)/", cand["url"]).group(1)
+    item = {
+        "id": re.sub(r"\W+", "_", cand["url"].split("//", 1)[-1]),
+        "source": "chance",
+        "url": cand["url"],
+        "title": desc[:80] or prize,
+        "company": " ".join(f.get("主催者", []))[:60],
+        "published": TODAY.isoformat(),
+        "deadline": deadline,
+        "winners": extract_winners(" ".join(f.get("当選者数", [])) + " " + desc),
+        "value": extract_value(desc),
+        "prize": prize,
+        "prizeShort": re.sub(r"\s+", " ", prize)[:40],
+        "image": extract_image(page),
+        "xPost": None,
+        "xNeeds": [],
+        "methods": methods,
+        # 応募ページへの転送リンク（本人がタップする用。ロボットは辿らない）
+        "entryUrl": f"https://www.chance.com/jump.srv?id={cid}",
+        "howTo": desc[:300],
+        "webOpen": False,
+        "addedAt": dt.datetime.now(JST).isoformat(timespec="seconds"),
+    }
+    if is_excluded(item):
+        return None
+    item["score"] = score(item)
+    return item
+
+
 def analyze(cand: dict, page: str) -> dict | None:
+    if cand["source"] == "chance":
+        return analyze_chance(cand, page)
     if cand["source"] == "koubo":
         return analyze_koubo(cand, page)
     if cand["source"] == "prtimes":
