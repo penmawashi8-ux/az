@@ -53,7 +53,7 @@ jobs:
         env:
           KENSHO_PROFILE: ${{ secrets.KENSHO_PROFILE }}
           # 0 = 入力までの試運転 / 1 = 実際に送信
-          KENSHO_SUBMIT: "0"
+          KENSHO_SUBMIT: "1"
           KENSHO_DATA: data/data.json
           KENSHO_APPLIED: data/applied.json
         run: |

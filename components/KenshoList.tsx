@@ -27,12 +27,22 @@ type Item = {
 
 type Data = { updatedAt: string; methodLabels: Record<string, string>; items: Item[] }
 type Mark = 'applied' | 'hidden'
-type Tab = 'todo' | 'x' | 'applied' | 'hidden'
+type Tab = 'todo' | 'x' | 'history' | 'hidden'
 
 // GitHub Actions が毎時更新する kensho-data ブランチ
 const DATA_URL = 'https://raw.githubusercontent.com/penmawashi8-ux/az/kensho-data/data.json'
 const APPLIED_URL = 'https://raw.githubusercontent.com/penmawashi8-ux/az/kensho-data/applied.json'
-type BotResult = { status: 'applied' | 'skip' | 'fail' | 'unknown'; reason: string; at: string }
+type BotResult = {
+  status: 'applied' | 'skip' | 'fail' | 'unknown'
+  reason: string
+  at: string
+  title?: string
+  prize?: string
+  url?: string
+  entryUrl?: string
+  deadline?: string | null
+  image?: string | null
+}
 const BOT_LABEL: Record<string, string> = { applied: '自動応募済み', skip: '自動応募できず', fail: '自動応募に失敗', unknown: '自動応募（完了未確認）' }
 const MARKS_KEY = 'kensho.marks.v1'
 const PREFS_KEY = 'kensho.prefs.v1'
@@ -342,6 +352,7 @@ export default function KenshoList() {
       const visible = !(hidePurchase && it.methods.includes('purchase'))
       if (tab === 'todo') return !m && visible && !isX(it)
       if (tab === 'x') return !m && visible && isX(it)
+      if (tab === 'history') return false
       return m === tab
     })
     if (sort === 'deadline') xs = [...xs].sort((a, b) => (a.deadline || '9999').localeCompare(b.deadline || '9999'))
@@ -360,6 +371,36 @@ export default function KenshoList() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [data, marks, bot, hidePurchase])
 
+  type Hist = { id: string; status: string; how: '自動' | '手動'; at: string; prize: string; title: string; url: string; deadline?: string | null; image?: string | null; reason?: string; entryUrl?: string }
+  const history: Hist[] = useMemo(() => {
+    const out: Hist[] = []
+    const byId = new Map((data?.items || []).map((i) => [i.id, i]))
+    Object.entries(bot).forEach(([id, b]) => {
+      const it = byId.get(id)
+      out.push({
+        id,
+        status: b.status,
+        how: '自動',
+        at: b.at,
+        prize: b.prize || (it ? prizeLabel(it) : b.title || id),
+        title: b.title || it?.title || '',
+        url: b.url || it?.url || '',
+        deadline: b.deadline ?? it?.deadline,
+        image: b.image ?? it?.image,
+        reason: b.reason,
+        entryUrl: b.entryUrl || it?.entryUrl || undefined,
+      })
+    })
+    Object.entries(marks).forEach(([id, m]) => {
+      if (m !== 'applied' || bot[id]?.status === 'applied') return
+      const it = byId.get(id)
+      if (!it) return
+      out.push({ id, status: 'applied', how: '手動', at: '', prize: prizeLabel(it), title: it.title, url: it.url, deadline: it.deadline, image: it.image })
+    })
+    return out.sort((a, b) => (b.at || '').localeCompare(a.at || ''))
+  }, [data, bot, marks])
+  const [histFilter, setHistFilter] = useState<'applied' | 'ng'>('applied')
+
   const bookmarklet = useMemo(() => buildBookmarklet(profile), [profile])
   const labels = data?.methodLabels || {}
 
@@ -373,10 +414,10 @@ export default function KenshoList() {
       </header>
 
       <nav className="k-tabs" role="tablist">
-        {(['todo', 'x', 'applied', 'hidden'] as Tab[]).map((t) => (
+        {(['todo', 'x', 'history', 'hidden'] as Tab[]).map((t) => (
           <button key={t} role="tab" aria-selected={tab === t} className={tab === t ? 'on' : ''} onClick={() => setTab(t)}>
-            {t === 'todo' ? '未応募' : t === 'x' ? 'X' : t === 'applied' ? '応募済み' : 'スキップ'}
-            <span className="k-count">{counts[t]}</span>
+            {t === 'todo' ? '未応募' : t === 'x' ? 'X' : t === 'history' ? '応募済み' : 'スキップ'}
+            <span className="k-count">{t === 'history' ? history.filter((h) => h.status === 'applied').length : counts[t]}</span>
           </button>
         ))}
       </nav>
@@ -456,12 +497,69 @@ export default function KenshoList() {
       )}
 
       {error && <p className="k-empty">データを読み込めませんでした（{error}）</p>}
-      {data && items.length === 0 && <p className="k-empty">{tab === 'todo' ? '新しい懸賞はありません。次の更新を待ちましょう。' : 'まだありません。'}</p>}
+      {data && items.length === 0 && tab !== 'history' && <p className="k-empty">{tab === 'todo' ? '新しい懸賞はありません。次の更新を待ちましょう。' : 'まだありません。'}</p>}
 
       {tab === 'x' && items.length > 0 && (
         <button className="k-btn primary k-runall" onClick={() => setRun({ queue: items.map((i) => i.id), i: 0, done: {} })}>
           連続応募モード（{items.length}件）
         </button>
+      )}
+
+      {tab === 'history' && (
+        <section>
+          <div className="k-seg" role="group" aria-label="表示">
+            <button className={histFilter === 'applied' ? 'on' : ''} onClick={() => setHistFilter('applied')}>
+              応募できた {history.filter((h) => h.status === 'applied').length}
+            </button>
+            <button className={histFilter === 'ng' ? 'on' : ''} onClick={() => setHistFilter('ng')}>
+              自動でできなかった {history.filter((h) => h.status !== 'applied').length}
+            </button>
+          </div>
+          {history.filter((h) => (histFilter === 'applied' ? h.status === 'applied' : h.status !== 'applied')).length === 0 && (
+            <p className="k-empty">まだありません。</p>
+          )}
+          <ul className="k-hist">
+            {history
+              .filter((h) => (histFilter === 'applied' ? h.status === 'applied' : h.status !== 'applied'))
+              .map((h) => {
+                const d = daysLeft(h.deadline ?? null)
+                return (
+                  <li key={h.id} className="k-hrow">
+                    {h.image ? (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img className="k-hthumb" src={thumb(h.image)} alt="" loading="lazy" referrerPolicy="no-referrer" onError={(e) => (e.currentTarget.style.visibility = 'hidden')} />
+                    ) : (
+                      <div className="k-hthumb" aria-hidden="true" />
+                    )}
+                    <div className="k-hbody">
+                      <a className="k-hprize" href={h.url} target="_blank" rel="noopener noreferrer">
+                        {h.prize}
+                      </a>
+                      <div className="k-meta">
+                        <span className={`k-how ${h.how === '自動' ? 'auto' : ''}`}>{h.how}</span>
+                        {h.at && <span>{new Date(h.at).toLocaleDateString('ja-JP', { month: 'numeric', day: 'numeric' })} 応募</span>}
+                        {h.deadline && <span>締切 {h.deadline.slice(5).replace('-', '/')}{d !== null && d < 0 ? '（終了）' : ''}</span>}
+                      </div>
+                      {h.status !== 'applied' && (
+                        <p className="k-bot k-bot-skip">
+                          {BOT_LABEL[h.status]}
+                          {h.reason ? `：${h.reason}` : ''}
+                          {h.entryUrl && (d === null || d >= 0) && (
+                            <>
+                              {' '}
+                              <a className="k-link" href={h.entryUrl} target="_blank" rel="noopener noreferrer">
+                                手動で応募
+                              </a>
+                            </>
+                          )}
+                        </p>
+                      )}
+                    </div>
+                  </li>
+                )
+              })}
+          </ul>
+        </section>
       )}
 
       <ul className="k-list">

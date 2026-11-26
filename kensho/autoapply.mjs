@@ -194,7 +194,20 @@ for (const it of targets) {
   console.log(`[${res.status}] ${it.id} ${host} ${res.reason}`)
   tally[res.status] = (tally[res.status] || 0) + 1
   // 試運転の結果は記録しない（本番で改めて応募する）。失敗は次回再挑戦せず記録。
-  if (res.status !== 'dry-ok') applied[it.id] = { ...res, host, at: new Date().toISOString(), tries: (applied[it.id]?.tries || 0) + 1 }
+  if (res.status !== 'dry-ok')
+    applied[it.id] = {
+      ...res,
+      host,
+      at: new Date().toISOString(),
+      tries: (applied[it.id]?.tries || 0) + 1,
+      // 履歴表示用（締切後に一覧から消えても残るように）
+      title: it.title,
+      prize: it.prizeShort || (it.prize || '').slice(0, 60),
+      url: it.url,
+      entryUrl: it.entryUrl,
+      deadline: it.deadline,
+      image: it.image || null,
+    }
 }
 await browser.close()
 fs.writeFileSync(APPLIED, JSON.stringify(applied, null, 1) + '\n')

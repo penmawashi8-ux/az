@@ -99,3 +99,13 @@ body:has(.kensho) { background: var(--k-bg, #f6f7f9); }
 .k-bot-skip, .k-bot-fail, .k-bot-unknown { color: var(--k-urgent); }
 .k-copy { display: block; width: 100%; margin: 4px 0 12px; }
 .k-note code { background: var(--k-chip); padding: 0 4px; border-radius: 3px; }
+.k-seg { display: flex; gap: 0; margin-bottom: 12px; border: 1px solid var(--k-line); border-radius: 8px; overflow: hidden; }
+.k-seg button { flex: 1; padding: 8px; font-size: 13px; color: var(--k-muted); background: var(--k-card); }
+.k-seg button.on { background: var(--k-text); color: var(--k-bg); font-weight: 600; }
+.k-hist { display: flex; flex-direction: column; gap: 8px; }
+.k-hrow { display: flex; gap: 10px; background: var(--k-card); border: 1px solid var(--k-line); border-radius: 10px; padding: 10px; }
+.k-hthumb { flex: none; width: 56px; height: 56px; border-radius: 6px; object-fit: cover; background: var(--k-chip); }
+.k-hbody { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 4px; }
+.k-hprize { font-weight: 700; font-size: 15px; line-height: 1.4; color: var(--k-text); overflow-wrap: anywhere; }
+.k-how { font-size: 11px; padding: 0 6px; border-radius: 4px; background: var(--k-chip); }
+.k-how.auto { color: var(--k-score); font-weight: 700; }
