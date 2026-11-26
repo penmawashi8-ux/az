@@ -35,7 +35,10 @@ FEEDS = [
     ("atpress", "https://www.atpress.ne.jp/rss/index.rdf"),
 ]
 KEYWORD_PAGES = [
-    ("koubo", "https://koubo.jp/category/present/all"),  # 公募ガイド：Web応募フォームの懸賞が多い
+    # 公募ガイド：Web応募フォームの懸賞が多い。ジャンル別ページも全部見る
+    *[("koubo", f"https://koubo.jp/category/present/{c}") for c in (
+        "all", "baby", "entertainment", "fashion", "food", "gift-certificate", "life",
+        "luxury", "pet", "prize", "talent", "travel-voucher")],
     ("prtimes", "https://prtimes.jp/topics/keywords/" + urllib.parse.quote("プレゼントキャンペーン")),
     ("prtimes", "https://prtimes.jp/topics/keywords/" + urllib.parse.quote("キャンペーン")),
 ]
@@ -346,6 +349,8 @@ def extract_entry_url(fragment: str) -> str | None:
             r += 20
         if re.search(r"campaign|cp|present|lottery|entry|form|cmp", href, re.I):
             r += 20
+        if re.search(r"forms\.gle/|docs\.google\.com/forms|form\.run/|formzu|questant\.jp|forms\.office\.com|survey|enquete|/form", href, re.I):
+            r += 40
         if re.search(r"(?:x|twitter)\.com/[^/]+/status/|instagram\.com/(?:p|reel)/", href):
             r += 30
         if SNS_PROFILE_RE.match(href):
@@ -471,6 +476,10 @@ def analyze_koubo(cand: dict, page: str) -> dict | None:
     }
     if is_excluded(item):
         return None
+    eu = item.get("entryUrl") or ""
+    item["webOpen"] = bool(eu and not SNS_HOST_RE.match(eu) and "form" in item["methods"]
+                           and not ({"purchase", "hagaki", "visit"} & set(item["methods"]))
+                           and not re.search(r"会員登録|ログイン|マイページ", text))
     item["score"] = score(item)
     return item
 
@@ -531,6 +540,7 @@ def analyze(cand: dict, page: str) -> dict | None:
         "xNeeds": extract_x_needs(text),
         "methods": extract_methods(full),
         "entryUrl": extract_entry_url(frag),
+        "webOpen": False,
         "addedAt": dt.datetime.now(JST).isoformat(timespec="seconds"),
     }
     item["prizeShort"] = extract_prize_short(
@@ -579,7 +589,7 @@ def main() -> int:
 
     # 旧形式（賞品名・画像なし）のアイテムを再解析
     for it in list(items.values()):
-        if it["source"] != "koubo" and ("prizeShort" not in it or "xNeeds" not in it):
+        if it["source"] != "koubo" and ("prizeShort" not in it or "xNeeds" not in it or "webOpen" not in it):
             cands.setdefault(it["url"], {"source": it["source"], "url": it["url"], "title": it["title"],
                                          "desc": "", "company": it.get("company", ""), "published": it.get("published", "")})
 

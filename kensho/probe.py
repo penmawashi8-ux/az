@@ -1,52 +1,35 @@
 #!/usr/bin/env python3
-"""情報源候補の取得可否と robots.txt を確認する（調査用）."""
+"""調査用: チャンスイットの一覧・詳細ページの構造（応募先URLの持ち方）を確認する."""
 import re
-import urllib.parse
+import time
 import urllib.request
 
 UA = "Mozilla/5.0 (compatible; kensho-collector/1.0; personal RSS reader)"
-CANDIDATES = [
-    "https://koubo.jp/category/present/all",
-    "https://precam.jp/",
-    "https://www.chance.com/present/",
-    "https://www.knshow.com/",
-    "https://doraken.jp/",
-    "https://www.nyandaful.jp/",
-    "https://kensho.kotane.net/",
-    "https://bestcalendar.jp/events/%E6%87%B8%E8%B3%9E",
-    "https://www.monipla.com/",
-    "https://kenshonavi.com/",
-    "https://www.kenshonavi.com/",
-    "https://www.kensho-box.com/",
-    "https://kenshobox.jp/",
-]
 
 
 def get(url):
-    try:
-        req = urllib.request.Request(url, headers={"User-Agent": UA, "Accept-Language": "ja"})
-        with urllib.request.urlopen(req, timeout=20) as r:
-            return r.status, r.geturl(), r.read().decode(r.headers.get_content_charset() or "utf-8", "replace")
-    except urllib.error.HTTPError as e:
-        return e.code, url, ""
-    except Exception as e:  # noqa: BLE001
-        return f"ERR {type(e).__name__}", url, ""
+    req = urllib.request.Request(url, headers={"User-Agent": UA, "Accept-Language": "ja"})
+    with urllib.request.urlopen(req, timeout=20) as r:
+        return r.read().decode(r.headers.get_content_charset() or "utf-8", "replace")
 
 
-for u in CANDIDATES:
-    st, final, body = get(u)
-    title = re.search(r"<title[^>]*>(.*?)</title>", body, re.S)
-    links = len(re.findall(r"<a\s", body))
-    cf = "cloudflare-challenge" if "Just a moment" in body else ""
-    p = urllib.parse.urlsplit(final)
-    rst, _, robots = get(f"{p.scheme}://{p.netloc}/robots.txt")
-    dis = []
-    agent_all = False
-    for line in robots.splitlines():
-        l = line.strip()
-        if l.lower().startswith("user-agent:"):
-            agent_all = l.split(":", 1)[1].strip() == "*"
-        elif agent_all and l.lower().startswith("disallow:"):
-            dis.append(l.split(":", 1)[1].strip())
-    print(f"== {u}\n   status={st} final={final} size={len(body)} links={links} {cf}\n"
-          f"   title={(title.group(1).strip()[:60] if title else '')!r}\n   robots({rst}) disallow*={dis[:12]}")
+top = get("https://www.chance.com/present/")
+hrefs = re.findall(r'href="([^"]+)"', top)
+pat = {}
+for h in hrefs:
+    k = re.sub(r"\d+", "N", h)
+    pat[k] = pat.get(k, 0) + 1
+print("TOP patterns:", sorted(pat.items(), key=lambda x: -x[1])[:25])
+details = [h for h in hrefs if re.search(r"/present/[^\"]*\d", h)][:3]
+print("details:", details)
+for d in details:
+    u = d if d.startswith("http") else "https://www.chance.com" + d
+    time.sleep(1.5)
+    s = get(u)
+    t = re.sub(r"<[^>]+>", "\n", re.sub(r"(?is)<(script|style)[^>]*>.*?</\1>", "", s))
+    lines = [l.strip() for l in t.split("\n") if l.strip()]
+    print("==", u)
+    print("  ext:", [h for h in re.findall(r'href="(https?://[^"]+)"', s) if "chance.com" not in h][:10])
+    print("  jump:", re.findall(r'href="([^"]*(?:jump|go)\.srv[^"]*)"', s)[:5])
+    i = next((k for k, l in enumerate(lines) if "応募" in l), 0)
+    print("  text:", " | ".join(lines[max(0, i - 10): i + 25])[:900])
