@@ -303,7 +303,14 @@ async function applyOne(it, reapply = false) {
       const before = p.url()
       const beforeText = await pageText(p)
       const btn = await clickSubmit(frame)
-      if (!btn) return { status: 'fail', reason: '送信ボタンが見つからない' }
+      if (!btn) {
+        // 改善用の手がかり（ボタンの文言・種類とページのパスだけ。個人情報は含まない）
+        const bh = await frame
+          .evaluate(() => Array.from(document.querySelectorAll('button, input[type=submit], input[type=image], input[type=button], a[role=button], [role=button]')).map((b) => `${b.tagName}:${b.type || ''}:${(b.value || b.textContent || b.alt || '').replace(/\s+/g, '').slice(0, 15)}:${b.offsetWidth}x${b.offsetHeight}:${b.disabled ? 'dis' : ''}`).slice(0, 10))
+          .catch((e) => [String(e).slice(0, 60)])
+        console.log('   buttons', new URL(frame.url()).pathname, JSON.stringify(bh))
+        return { status: 'fail', reason: '送信ボタンが見つからない' }
+      }
       await p.waitForLoadState('networkidle', { timeout: 15000 }).catch(() => {})
       await p.waitForTimeout(1500)
       const after = await pageText(p)
