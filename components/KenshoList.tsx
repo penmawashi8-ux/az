@@ -58,7 +58,7 @@ const PROFILE_KEY = 'kensho.profile.v1'
 const RUN_KEY = 'kensho.run.v1'
 const USERSCRIPT_PATH = '/kensho/x-oneclick.user.js'
 // public/kensho/x-oneclick.user.js の @version と合わせる
-const USERSCRIPT_VERSION = '1.0.2'
+const USERSCRIPT_VERSION = '1.0.3'
 
 function readLS<T>(key: string, fallback: T): T {
   try {
@@ -392,13 +392,25 @@ export default function KenshoList() {
   const [kxMsg, setKxMsg] = useState<string | null>(null)
 
   useEffect(() => {
-    const check = () => setExt(document.documentElement.dataset.kenshoX || null)
+    // スクリプト1.0.3以降は保存領域にも「今ここで動いた」記録を残す（目印が描画で消えても分かるように）
+    const fromLS = () => {
+      const r = readLS<{ v?: string; at?: number } | null>('kensho.x', null)
+      return r?.v && r.at && Date.now() - r.at < 60000 ? r.v : null
+    }
+    const check = () => {
+      const v = document.documentElement.dataset.kenshoX || (window as unknown as { __kenshoX?: string }).__kenshoX || fromLS()
+      if (v) setExt(v)
+    }
     check()
     window.addEventListener('kensho-x-ready', check)
-    const t = setTimeout(check, 1500)
+    let n = 0
+    const t = setInterval(() => {
+      check()
+      if (++n >= 12) clearInterval(t)
+    }, 500)
     return () => {
       window.removeEventListener('kensho-x-ready', check)
-      clearTimeout(t)
+      clearInterval(t)
     }
   }, [])
 
@@ -893,7 +905,7 @@ export default function KenshoList() {
               )}
               {!ext && (
                 <details className="k-note">
-                  <summary>ワンボタン応募を使うには</summary>
+                  <summary>ワンボタン応募を使うには（入れたのに出ないときは入れ直し）</summary>
                   無料のブラウザ拡張にスクリプトを入れると、ボタン1回でフォロー・リポスト・いいねを押して戻ってこられます。iPhoneはApp Storeの「Userscripts」（Safariの拡張機能で有効にする）、PCは「Tampermonkey」を入れてから、
                   <a className="k-link" href={(process.env.NEXT_PUBLIC_BASE_PATH || '') + USERSCRIPT_PATH} target="_blank" rel="noopener noreferrer">
                     スクリプト

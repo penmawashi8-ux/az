@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         懸賞リスト ワンボタン応募
 // @namespace    penmawashi8-ux.kensho
-// @version      1.0.2
+// @version      1.0.3
 // @description  懸賞リストの「ワンボタン応募」から開いたXの投稿で、フォロー・リポスト・いいねを押して懸賞リストへ戻る
 // @match        https://x.com/*
 // @match        https://twitter.com/*
@@ -19,18 +19,34 @@
  */
 ;(function () {
   'use strict'
-  const VERSION = '1.0.2'
+  const VERSION = '1.0.3'
   const JOB_KEY = 'kensho.xjob'
 
   // 懸賞リスト側：このスクリプトが入っていることを知らせる
   if (location.hostname.endsWith('github.io')) {
+    // 読み込み開始直後はページの枠がまだ無いことがあり、画面の描画で目印が消えることもあるので、
+    // 保存領域にも書き、数秒間は目印を付け直し続ける
     const ready = () => {
-      document.documentElement.dataset.kenshoX = VERSION
-      window.dispatchEvent(new Event('kensho-x-ready'))
+      try {
+        localStorage.setItem('kensho.x', JSON.stringify({ v: VERSION, at: Date.now() }))
+      } catch (e) {
+        /* ignore */
+      }
+      try {
+        if (document.documentElement) document.documentElement.setAttribute('data-kensho-x', VERSION)
+        window.dispatchEvent(new Event('kensho-x-ready'))
+      } catch (e) {
+        /* ignore */
+      }
     }
     ready()
     document.addEventListener('DOMContentLoaded', ready)
     window.addEventListener('load', ready)
+    let n = 0
+    const t = setInterval(() => {
+      ready()
+      if (++n >= 20) clearInterval(t)
+    }, 500)
     return
   }
 
