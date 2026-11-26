@@ -497,6 +497,10 @@ def analyze_koubo(cand: dict, page: str) -> dict | None:
     i = page.find("主催者サイト")
     m = re.search(r'href="(https?://(?!koubo\.jp)[^"]+)"', page[i:]) if i >= 0 else None
     site = re.sub(r"#\d+$", "", html.unescape(m.group(1))) if m else None
+    if site:
+        # 「…/terms）およびBabyTech®」のように本文が混ざったURLを、URLとして有効な部分だけに切る
+        mm = re.match(r"https?://[!-~]+", site)
+        site = mm.group(0).rstrip(").,;:'\"]") if mm else None
     how = " ".join(f.get("応募方法/応募先", []))
     body = " ".join(f.get("募集内容", []))
     prize_lines = f.get("賞", [])
