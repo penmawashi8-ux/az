@@ -20,8 +20,27 @@
   const POSITIVE = /とても|非常に|満足|好き|はい|ある|あり|興味がある|使ってみたい|買いたい|購入したい|知っている|良い|よい/
   const rules = [
     [/mail|メール/i, (h) => (/確認|confirm|再入力|again/i.test(h) ? P.email : P.email)],
-    [/(zip|postal|post_?code|郵便)/i, (h) => (/(2|second|後|下)/.test(h) ? zip.slice(3) : /(1|first|前|上)/.test(h) ? zip.slice(0, 3) : zip)],
-    [/(tel|phone|電話|携帯)/i, (h) => (/(1|first)$/.test(h) ? tel.slice(0, 3) : /(2|second)$/.test(h) ? tel.slice(3, 7) : /(3|third)$/.test(h) ? tel.slice(7) : tel)],
+    // 分割入力（郵便番号 3+4、電話番号 3/4/4 など）は入力欄の maxlength と name/id の末尾だけで判断する
+    // （ラベルの「例：812-8577」などの数字で誤判定しないため）
+    [/(zip|postal|post_?code|郵便)/i, (h, el) => {
+      const id = `${el.name || ''} ${el.id || ''}`.trim()
+      const ml = el.maxLength
+      if (ml === 3 || /(1|_?a|first|head|前|上)$/i.test(id)) return zip.slice(0, 3)
+      if (ml === 4 || /(2|_?b|second|tail|後|下)$/i.test(id)) return zip.slice(3)
+      if (ml === 8 || /-/.test(el.placeholder || '')) return `${zip.slice(0, 3)}-${zip.slice(3)}`
+      return zip
+    }],
+    [/(tel|phone|電話|携帯)/i, (h, el) => {
+      const id = `${el.name || ''} ${el.id || ''}`.trim()
+      const parts = tel.length === 11 ? [tel.slice(0, 3), tel.slice(3, 7), tel.slice(7)] : [tel.slice(0, 2), tel.slice(2, 6), tel.slice(6)]
+      if (el.maxLength > 0 && el.maxLength <= 5) {
+        if (/(1|first)$/i.test(id)) return parts[0]
+        if (/(2|second)$/i.test(id)) return parts[1]
+        if (/(3|third)$/i.test(id)) return parts[2]
+      }
+      if (el.maxLength === 13 || /\d-\d/.test(el.placeholder || '')) return `${parts[0]}-${parts[1]}-${parts[2]}`
+      return tel
+    }],
     [/(pref|都道府県|region|address-level1)/i, () => P.pref],
     [/(city|市区町村|address-level2|addr(ess)?1|住所1)/i, () => (P.city || '') + (P.addr || '')],
     [/(bldg|building|建物|マンション|addr(ess)?3|address-line2|住所3)/i, () => P.bldg],
@@ -45,7 +64,7 @@
       const l = document.querySelector('label[for="' + CSS.escape(el.id) + '"]')
       if (l) t += ' ' + l.textContent
     }
-    const wrap = el.closest('label, tr, dl, li, fieldset, .form-group, .row, div')
+    const wrap = el.closest('label, tr, dl, li, fieldset, .form-group, .row, div') || el.parentElement
     if (wrap) t += ' ' + (wrap.textContent || '').slice(0, 80)
     return t
   }
@@ -72,11 +91,13 @@
     if (!visible(el) || el.disabled || el.readOnly || el.value) return
     const h = [el.name, el.id, el.getAttribute('autocomplete'), el.getAttribute('placeholder'), el.getAttribute('aria-label')].join(' ')
     const hl = h + ' ' + labelOf(el)
-    const isFree = /感想|理由|意見|コメント|メッセージ|ご要望|自由|エピソード|思い出|ひと言|一言|お聞かせ|教えて/.test(hl.slice(0, 120))
-    if (!(isFree && el instanceof HTMLTextAreaElement)) {
+    const FREE = /感想|理由|意見|コメント|メッセージ|ご要望|自由|エピソード|思い出|ひと言|一言|お聞かせ|教えて|message|comment|\bmsg\b/i
+    const own = `${el.name} ${el.id} ${el.getAttribute('placeholder') || ''} ${(el.labels && el.labels[0]?.innerText) || ''} ${el.parentElement && el.parentElement.querySelectorAll('input, textarea, select').length === 1 ? el.parentElement.textContent.slice(0, 40) : ''}`
+    const isFree = FREE.test(own) || FREE.test(hl.slice(0, 120))
+    if (!(isFree && (el instanceof HTMLTextAreaElement || FREE.test(own)))) {
       for (const [re, get] of rules) {
         if (re.test(h) || (!h.trim() && re.test(hl)) || re.test(hl.slice(0, 40))) {
-          const v = get(hl)
+          const v = get(hl, el)
           if (v && setVal(el, v)) n++
           return
         }

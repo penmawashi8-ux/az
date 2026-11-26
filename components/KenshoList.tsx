@@ -134,11 +134,28 @@ function buildBookmarklet(p: Record<string, string>): string {
     const tel = (P.tel || '').replace(/\D/g, '')
     const zip = (P.zip || '').replace(/\D/g, '')
     const kata = (s: string) => s.replace(/[ぁ-ゖ]/g, (c) => String.fromCharCode(c.charCodeAt(0) + 0x60))
-    type R = [RegExp, (h: string) => string | undefined]
+    type R = [RegExp, (h: string, el: HTMLInputElement) => string | undefined]
     const rules: R[] = [
       [/mail|メール/i, () => P.email],
-      [/(zip|postal|post_?code|郵便)/i, (h) => (/(2|second|後|下)/.test(h) ? zip.slice(3) : /(1|first|前|上)/.test(h) ? zip.slice(0, 3) : zip)],
-      [/(tel|phone|電話|携帯)/i, (h) => (/(1|first)$/.test(h) ? tel.slice(0, 3) : /(2|second)$/.test(h) ? tel.slice(3, 7) : /(3|third)$/.test(h) ? tel.slice(7) : tel)],
+      // 分割入力は maxlength と name/id の末尾だけで判断（ラベル内の「例：812-8577」で誤判定しない）
+      [/(zip|postal|post_?code|郵便)/i, (h, el) => {
+        const id = `${el.name || ''} ${el.id || ''}`.trim()
+        if (el.maxLength === 3 || /(1|_?a|first|前|上)$/i.test(id)) return zip.slice(0, 3)
+        if (el.maxLength === 4 || /(2|_?b|second|後|下)$/i.test(id)) return zip.slice(3)
+        if (el.maxLength === 8 || /-/.test(el.placeholder || '')) return `${zip.slice(0, 3)}-${zip.slice(3)}`
+        return zip
+      }],
+      [/(tel|phone|電話|携帯)/i, (h, el) => {
+        const id = `${el.name || ''} ${el.id || ''}`.trim()
+        const parts = tel.length === 11 ? [tel.slice(0, 3), tel.slice(3, 7), tel.slice(7)] : [tel.slice(0, 2), tel.slice(2, 6), tel.slice(6)]
+        if (el.maxLength > 0 && el.maxLength <= 5) {
+          if (/(1|first)$/i.test(id)) return parts[0]
+          if (/(2|second)$/i.test(id)) return parts[1]
+          if (/(3|third)$/i.test(id)) return parts[2]
+        }
+        if (el.maxLength === 13 || /\d-\d/.test(el.placeholder || '')) return parts.join('-')
+        return tel
+      }],
       [/(pref|都道府県|region|address-level1)/i, () => P.pref],
       [/(city|市区町村|address-level2|addr(ess)?1|住所1)/i, () => P.city + (P.addr || '')],
       [/(bldg|building|建物|マンション|addr(ess)?3|address-line2|住所3)/i, () => P.bldg],
@@ -196,7 +213,7 @@ function buildBookmarklet(p: Record<string, string>): string {
       if (!(survey && isFree && (el instanceof HTMLTextAreaElement))) {
         for (const [re, get] of rules) {
           if (re.test(h) || (!h.trim() && re.test(hl)) || re.test(hl.slice(0, 40))) {
-            const v = get(hl)
+            const v = get(hl, el)
             if (v && setVal(el, v)) n++
             return
           }

@@ -48,7 +48,7 @@ const needsReapply = (a) =>
 const NO_DUP = /(重複|複数回|二重|同一人物|同一の方)[^。]{0,25}(応募|エントリー)?[^。]{0,25}(無効|禁止|不可|できません|お断り|認め|対象外|取り消)|(お?一人様?|おひとり様?|1人|１人|お一人)\s*(につき)?\s*(1|１|一)\s*(回|口)(限り|まで|のみ)?/
 
 // ロボットの版。上げると「フォームが見つからない」等でスキップした懸賞に再挑戦する
-const BOT_VERSION = 4
+const BOT_VERSION = 5
 const RETRYABLE = /フォームが見つからない|入力欄が個人情報フォームでない|必須項目が埋められない|クイズに答えられない/
 const ENTRY_LINK = /応募フォーム|応募する|応募はこちら|ご応募はこちら|応募ページ|エントリー|参加する|アンケートに(回答|答え)|アンケートはこちら|今すぐ応募|応募画面|フォームへ|応募へ|^\s*応募\s*$|ENTRY|Entry|APPLY|Apply|応募受付|応募ボタン|プレゼントに応募|キャンペーンに参加/
 const ENTRY_NG = /応募要項|応募規約|応募方法|応募資格|応募条件|注意事項|当選発表|よくある|FAQ|プライバシー/
@@ -195,7 +195,7 @@ const SCAM_TEXT = /当選確定|必ず当たる|あなたが選ばれ|おめで�
 const SENSITIVE_FIELD = /card|cvv|cvc|security.?code|有効期限|カード番号|口座|bank|account.?number|暗証|pin\b|マイナンバー|my.?number|個人番号|password|パスワード/i
 async function checkRisk(p, frame, text) {
   const url = frame.url()
-  if (!url.startsWith('https://')) return '暗号化されていないページ'
+  if (!url.startsWith('https://') && !/^http:\/\/(localhost|127\.0\.0\.1)[:/]/.test(url)) return '暗号化されていないページ' // localhost はテスト用
   if (SCAM_TEXT.test(text)) return '金銭要求・詐欺的な文言'
   const sens = await frame
     .evaluate((src) => {
@@ -207,7 +207,7 @@ async function checkRisk(p, frame, text) {
     .catch(() => false)
   if (sens) return 'カード・口座・パスワード等の入力欄'
   // 送信先が別ドメインでかつ http の場合も危険
-  const insecurePost = await frame.evaluate(() => Array.from(document.forms).some((f) => f.action && f.action.startsWith('http://'))).catch(() => false)
+  const insecurePost = await frame.evaluate(() => Array.from(document.forms).some((f) => typeof f.action === 'string' && f.action.startsWith('http://') && !/^http:\/\/(localhost|127\.0\.0\.1)[:/]/.test(f.action))).catch(() => false)
   if (insecurePost) return '暗号化されない送信先'
   return ''
 }
