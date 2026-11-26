@@ -54,6 +54,9 @@ const OKS = ['applied', 'unknown']
 const MARKS_KEY = 'kensho.marks.v1'
 const PREFS_KEY = 'kensho.prefs.v1'
 const PROFILE_KEY = 'kensho.profile.v1'
+// ワンボタン応募でXへ移動している間、連続応募モードの続きを覚えておく
+const RUN_KEY = 'kensho.run.v1'
+const USERSCRIPT_PATH = '/kensho/x-oneclick.user.js'
 
 function readLS<T>(key: string, fallback: T): T {
   try {
@@ -382,6 +385,56 @@ export default function KenshoList() {
   // まとめて1回：フォロー・リポスト・いいねを元の投稿ページ1枚で済ませる（Xとの往復が1回になる）
   const [oneTrip, setOneTrip] = useState(true)
   const [run, setRun] = useState<{ queue: string[]; i: number; done: Record<string, boolean>; text?: string } | null>(null)
+  // ワンボタン応募用のユーザースクリプトが入っているか（入っていればバージョン）
+  const [ext, setExt] = useState<string | null>(null)
+  const [kxMsg, setKxMsg] = useState<string | null>(null)
+
+  useEffect(() => {
+    const check = () => setExt(document.documentElement.dataset.kenshoX || null)
+    check()
+    window.addEventListener('kensho-x-ready', check)
+    const t = setTimeout(check, 1500)
+    return () => {
+      window.removeEventListener('kensho-x-ready', check)
+      clearTimeout(t)
+    }
+  }, [])
+
+  // ワンボタン応募からの戻り（?kx=懸賞ID&kxok=1）：応募済みにして連続応募モードの続きへ
+  useEffect(() => {
+    if (!data) return
+    const q = new URLSearchParams(location.search)
+    const kx = q.get('kx')
+    if (!kx) return
+    const ok = q.get('kxok') === '1'
+    window.history.replaceState(null, '', location.pathname)
+    const saved = readLS<{ queue: string[]; i: number; done: Record<string, boolean>; text?: string } | null>(RUN_KEY, null)
+    try {
+      localStorage.removeItem(RUN_KEY)
+    } catch {
+      /* ignore */
+    }
+    const it = data.items.find((x) => x.id === kx)
+    const writes = !!it?.xNeeds?.some((n) => ['reply', 'quote', 'hashtag'].includes(n))
+    if (!ok) {
+      // 押せなかった：同じ懸賞のまま連続応募モードに戻す
+      setKxMsg('自動で押せなかったので、手で押した場合は「応募済みにして次へ」を押してください')
+      if (saved) setRun({ ...saved, done: {} })
+      return
+    }
+    if (!saved || saved.queue[saved.i] !== kx) {
+      if (!writes) mark(kx, 'applied', false)
+      return
+    }
+    const done = { ...saved.done, follow: true, rt: true, like: true, post: true }
+    if (writes) setRun({ ...saved, done })
+    else {
+      mark(kx, 'applied', false)
+      if (saved.i + 1 >= saved.queue.length) setRun(null)
+      else setRun({ ...saved, i: saved.i + 1, done: {}, text: undefined })
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [data])
 
   useEffect(() => {
     setMarks(readLS(MARKS_KEY, {}))
@@ -805,7 +858,37 @@ export default function KenshoList() {
                   </a>
                 </div>
               )}
-              {next ? (
+              {kxMsg && <p className="k-warn">{kxMsg}</p>}
+              {ext && next && ['follow', 'rt', 'like', 'post'].includes(next.key) && (
+                <button
+                  className="k-btn primary k-big"
+                  onClick={() => {
+                    writeLS(RUN_KEY, run)
+                    setKxMsg(null)
+                    const job = {
+                      item: cur.id,
+                      user: xp.user,
+                      id: xp.id,
+                      like: wantLike,
+                      back: location.origin + location.pathname,
+                    }
+                    location.href = `${xp.url}#kensho=${encodeURIComponent(JSON.stringify(job))}`
+                  }}
+                >
+                  ワンボタン応募（フォロー・リポスト{wantLike ? '・いいね' : ''}）
+                </button>
+              )}
+              {!ext && (
+                <details className="k-note">
+                  <summary>ワンボタン応募を使うには</summary>
+                  無料のブラウザ拡張にスクリプトを入れると、ボタン1回でフォロー・リポスト・いいねを押して戻ってこられます。iPhoneはApp Storeの「Userscripts」（Safariの拡張機能で有効にする）、PCは「Tampermonkey」を入れてから、
+                  <a className="k-link" href={(process.env.NEXT_PUBLIC_BASE_PATH || '') + USERSCRIPT_PATH} target="_blank" rel="noopener noreferrer">
+                    スクリプト
+                  </a>
+                  を開いて追加してください。XにはSafari（またはPCのブラウザ）でログインしておく必要があります。
+                </details>
+              )}
+              {next && ext && ['follow', 'rt', 'like', 'post'].includes(next.key) ? null : next ? (
                 <a
                   className="k-btn primary k-big"
                   href={next.href}
