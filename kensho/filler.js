@@ -18,6 +18,14 @@
   const NO_TOUCH = /メルマガ|メールマガジン|配信を希望|ニュースレター|案内を受け|受け取る|お知らせを希望/
   const CONSENT = /同意|規約|ポリシー|個人情報の取り?扱/
   const POSITIVE = /とても|非常に|満足|好き|はい|ある|あり|興味がある|使ってみたい|買いたい|購入したい|知っている|良い|よい/
+  // 同じ名前で末尾だけ 1/2/3 違う欄が並んでいれば分割入力（maxlength が無い場合も）
+  const splitIndex = (el) => {
+    const n = el.name || el.id || ''
+    const m = n.match(/^(.*?)([-_]?)([123])$/)
+    if (!m) return 0
+    const other = m[1] + m[2] + (m[3] === '1' ? '2' : '1')
+    return document.querySelector(`[name="${CSS.escape(other)}"], [id="${CSS.escape(other)}"]`) ? Number(m[3]) : 0
+  }
   const rules = [
     [/mail|メール/i, (h) => (/確認|confirm|再入力|again/i.test(h) ? P.email : P.email)],
     // 分割入力（郵便番号 3+4、電話番号 3/4/4 など）は入力欄の maxlength と name/id の末尾だけで判断する
@@ -25,18 +33,21 @@
     [/(zip|postal|post_?code|郵便)/i, (h, el) => {
       const id = `${el.name || ''} ${el.id || ''}`.trim()
       const ml = el.maxLength
-      if (ml === 3 || /(1|_?a|first|head|前|上)$/i.test(id)) return zip.slice(0, 3)
-      if (ml === 4 || /(2|_?b|second|tail|後|下)$/i.test(id)) return zip.slice(3)
+      const si = splitIndex(el)
+      if (ml === 3 || si === 1 || /(_a|first|head|前|上)$/i.test(id)) return zip.slice(0, 3)
+      if (ml === 4 || si === 2 || /(_b|second|tail|後|下)$/i.test(id)) return zip.slice(3)
       if (ml === 8 || /-/.test(el.placeholder || '')) return `${zip.slice(0, 3)}-${zip.slice(3)}`
       return zip
     }],
     [/(tel|phone|電話|携帯)/i, (h, el) => {
       const id = `${el.name || ''} ${el.id || ''}`.trim()
       const parts = tel.length === 11 ? [tel.slice(0, 3), tel.slice(3, 7), tel.slice(7)] : [tel.slice(0, 2), tel.slice(2, 6), tel.slice(6)]
+      const si = splitIndex(el)
+      if (si) return parts[si - 1]
       if (el.maxLength > 0 && el.maxLength <= 5) {
-        if (/(1|first)$/i.test(id)) return parts[0]
-        if (/(2|second)$/i.test(id)) return parts[1]
-        if (/(3|third)$/i.test(id)) return parts[2]
+        if (/first$/i.test(id)) return parts[0]
+        if (/second$/i.test(id)) return parts[1]
+        if (/third$/i.test(id)) return parts[2]
       }
       if (el.maxLength === 13 || /\d-\d/.test(el.placeholder || '')) return `${parts[0]}-${parts[1]}-${parts[2]}`
       return tel

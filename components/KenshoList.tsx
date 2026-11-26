@@ -134,24 +134,35 @@ function buildBookmarklet(p: Record<string, string>): string {
     const tel = (P.tel || '').replace(/\D/g, '')
     const zip = (P.zip || '').replace(/\D/g, '')
     const kata = (s: string) => s.replace(/[ぁ-ゖ]/g, (c) => String.fromCharCode(c.charCodeAt(0) + 0x60))
+    // 同じ名前で末尾だけ 1/2/3 違う欄が並んでいれば分割入力（maxlength が無い場合も）
+    const splitIndex = (el: HTMLInputElement) => {
+      const n = el.name || el.id || ''
+      const m = n.match(/^(.*?)([-_]?)([123])$/)
+      if (!m) return 0
+      const other = m[1] + m[2] + (m[3] === '1' ? '2' : '1')
+      return document.querySelector(`[name="${CSS.escape(other)}"], [id="${CSS.escape(other)}"]`) ? Number(m[3]) : 0
+    }
     type R = [RegExp, (h: string, el: HTMLInputElement) => string | undefined]
     const rules: R[] = [
       [/mail|メール/i, () => P.email],
       // 分割入力は maxlength と name/id の末尾だけで判断（ラベル内の「例：812-8577」で誤判定しない）
       [/(zip|postal|post_?code|郵便)/i, (h, el) => {
         const id = `${el.name || ''} ${el.id || ''}`.trim()
-        if (el.maxLength === 3 || /(1|_?a|first|前|上)$/i.test(id)) return zip.slice(0, 3)
-        if (el.maxLength === 4 || /(2|_?b|second|後|下)$/i.test(id)) return zip.slice(3)
+        const si = splitIndex(el)
+        if (el.maxLength === 3 || si === 1 || /(_a|first|前|上)$/i.test(id)) return zip.slice(0, 3)
+        if (el.maxLength === 4 || si === 2 || /(_b|second|後|下)$/i.test(id)) return zip.slice(3)
         if (el.maxLength === 8 || /-/.test(el.placeholder || '')) return `${zip.slice(0, 3)}-${zip.slice(3)}`
         return zip
       }],
       [/(tel|phone|電話|携帯)/i, (h, el) => {
         const id = `${el.name || ''} ${el.id || ''}`.trim()
         const parts = tel.length === 11 ? [tel.slice(0, 3), tel.slice(3, 7), tel.slice(7)] : [tel.slice(0, 2), tel.slice(2, 6), tel.slice(6)]
+        const si = splitIndex(el)
+        if (si) return parts[si - 1]
         if (el.maxLength > 0 && el.maxLength <= 5) {
-          if (/(1|first)$/i.test(id)) return parts[0]
-          if (/(2|second)$/i.test(id)) return parts[1]
-          if (/(3|third)$/i.test(id)) return parts[2]
+          if (/first$/i.test(id)) return parts[0]
+          if (/second$/i.test(id)) return parts[1]
+          if (/third$/i.test(id)) return parts[2]
         }
         if (el.maxLength === 13 || /\d-\d/.test(el.placeholder || '')) return parts.join('-')
         return tel
