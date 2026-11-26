@@ -44,6 +44,8 @@ type BotResult = {
   image?: string | null
 }
 const BOT_LABEL: Record<string, string> = { applied: '自動応募済み', skip: '自動応募できず', fail: '自動応募に失敗', unknown: '自動応募（完了未確認）' }
+// 送信まで進んだもの（完了画面を確認できなかったものも含む）
+const OKS = ['applied', 'unknown']
 const MARKS_KEY = 'kensho.marks.v1'
 const PREFS_KEY = 'kensho.prefs.v1'
 const PROFILE_KEY = 'kensho.profile.v1'
@@ -334,7 +336,7 @@ export default function KenshoList() {
 
   useEffect(() => writeLS(PREFS_KEY, { hidePurchase, sort }), [hidePurchase, sort])
 
-  const markOf = (id: string): Mark | undefined => marks[id] || (bot[id]?.status === 'applied' ? 'applied' : undefined)
+  const markOf = (id: string): Mark | undefined => marks[id] || (['applied', 'unknown'].includes(bot[id]?.status || '') ? 'applied' : undefined)
 
   const mark = (id: string, m: Mark | undefined, withUndo = true) => {
     const next = { ...marks }
@@ -417,7 +419,7 @@ export default function KenshoList() {
         {(['todo', 'x', 'history', 'hidden'] as Tab[]).map((t) => (
           <button key={t} role="tab" aria-selected={tab === t} className={tab === t ? 'on' : ''} onClick={() => setTab(t)}>
             {t === 'todo' ? '未応募' : t === 'x' ? 'X' : t === 'history' ? '応募済み' : 'スキップ'}
-            <span className="k-count">{t === 'history' ? history.filter((h) => h.status === 'applied').length : counts[t]}</span>
+            <span className="k-count">{t === 'history' ? history.filter((h) => OKS.includes(h.status)).length : counts[t]}</span>
           </button>
         ))}
       </nav>
@@ -509,18 +511,18 @@ export default function KenshoList() {
         <section>
           <div className="k-seg" role="group" aria-label="表示">
             <button className={histFilter === 'applied' ? 'on' : ''} onClick={() => setHistFilter('applied')}>
-              応募できた {history.filter((h) => h.status === 'applied').length}
+              応募できた {history.filter((h) => OKS.includes(h.status)).length}
             </button>
             <button className={histFilter === 'ng' ? 'on' : ''} onClick={() => setHistFilter('ng')}>
-              自動でできなかった {history.filter((h) => h.status !== 'applied').length}
+              自動でできなかった {history.filter((h) => !OKS.includes(h.status)).length}
             </button>
           </div>
-          {history.filter((h) => (histFilter === 'applied' ? h.status === 'applied' : h.status !== 'applied')).length === 0 && (
+          {history.filter((h) => (histFilter === 'applied' ? OKS.includes(h.status) : !OKS.includes(h.status))).length === 0 && (
             <p className="k-empty">まだありません。</p>
           )}
           <ul className="k-hist">
             {history
-              .filter((h) => (histFilter === 'applied' ? h.status === 'applied' : h.status !== 'applied'))
+              .filter((h) => (histFilter === 'applied' ? OKS.includes(h.status) : !OKS.includes(h.status)))
               .map((h) => {
                 const d = daysLeft(h.deadline ?? null)
                 return (
@@ -540,7 +542,8 @@ export default function KenshoList() {
                         {h.at && <span>{new Date(h.at).toLocaleDateString('ja-JP', { month: 'numeric', day: 'numeric' })} 応募</span>}
                         {h.deadline && <span>締切 {h.deadline.slice(5).replace('-', '/')}{d !== null && d < 0 ? '（終了）' : ''}</span>}
                       </div>
-                      {h.status !== 'applied' && (
+                      {h.status === 'unknown' && <p className="k-bot">送信済み（完了画面は確認できず）</p>}
+                      {!OKS.includes(h.status) && (
                         <p className="k-bot k-bot-skip">
                           {BOT_LABEL[h.status]}
                           {h.reason ? `：${h.reason}` : ''}
