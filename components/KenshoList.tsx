@@ -57,6 +57,8 @@ const PROFILE_KEY = 'kensho.profile.v1'
 // ワンボタン応募でXへ移動している間、連続応募モードの続きを覚えておく
 const RUN_KEY = 'kensho.run.v1'
 const USERSCRIPT_PATH = '/kensho/x-oneclick.user.js'
+// public/kensho/x-oneclick.user.js の @version と合わせる
+const USERSCRIPT_VERSION = '1.0.1'
 
 function readLS<T>(key: string, fallback: T): T {
   try {
@@ -859,6 +861,15 @@ export default function KenshoList() {
                 </div>
               )}
               {kxMsg && <p className="k-warn">{kxMsg}</p>}
+              {ext && ext !== USERSCRIPT_VERSION && (
+                <p className="k-warn">
+                  ワンボタン応募のスクリプトに新しい版があります（今 {ext} → {USERSCRIPT_VERSION}）。
+                  <a className="k-link" href={(process.env.NEXT_PUBLIC_BASE_PATH || '') + USERSCRIPT_PATH}>
+                    ここを開いて
+                  </a>
+                  Userscriptsで上書きインストールしてください。
+                </p>
+              )}
               {ext && next && ['follow', 'rt', 'like', 'post'].includes(next.key) && (
                 <button
                   className="k-btn primary k-big"
