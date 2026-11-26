@@ -16,6 +16,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { chromium } from 'playwright'
+import { solveQuiz } from './quiz.mjs'
 
 const DIR = path.dirname(fileURLToPath(import.meta.url))
 const DATA = process.env.KENSHO_DATA || 'data/data.json'
@@ -41,8 +42,8 @@ const data = JSON.parse(fs.readFileSync(DATA, 'utf8'))
 const applied = fs.existsSync(APPLIED) ? JSON.parse(fs.readFileSync(APPLIED, 'utf8')) : {}
 
 // ロボットの版。上げると「フォームが見つからない」等でスキップした懸賞に再挑戦する
-const BOT_VERSION = 2
-const RETRYABLE = /フォームが見つからない|入力欄が個人情報フォームでない/
+const BOT_VERSION = 3
+const RETRYABLE = /フォームが見つからない|入力欄が個人情報フォームでない|必須項目が埋められない|クイズに答えられない/
 const ENTRY_LINK = /応募フォーム|応募する|応募はこちら|ご応募はこちら|応募ページ|エントリー|参加する|アンケートに(回答|答え)|アンケートはこちら|今すぐ応募|応募画面|フォームへ|応募へ|^\s*応募\s*$|ENTRY|Entry|APPLY|Apply|応募受付|応募ボタン|プレゼントに応募|キャンペーンに参加/
 const ENTRY_NG = /応募要項|応募規約|応募方法|応募資格|応募条件|注意事項|当選発表|よくある|FAQ|プライバシー/
 const FORM_HREF = /forms\.gle\/|docs\.google\.com\/forms|form\.run\/|formzu|questant\.jp|forms\.office\.com|tayori\.com\/form|formmailer|cuenote|\/(entry|apply|enquete|questionnaire|form)(\/|\.|\?|$)/i
@@ -179,6 +180,7 @@ async function applyOne(it) {
   try {
     await page.goto(it.entryUrl, { waitUntil: 'domcontentloaded', timeout: 30000 })
     await page.waitForLoadState('networkidle', { timeout: 8000 }).catch(() => {})
+    const landing = await pageText(page) // クイズの答え探し用（キャンペーン本文）
     const found = await findForm(page)
     if (found.sns) return { status: 'skip', reason: 'SNS応募' }
     if (!found.frame) {
@@ -202,13 +204,21 @@ async function applyOne(it) {
     const text = await pageText(p)
     if (NO_AUTO.test(text)) return { status: 'skip', reason: '規約で自動応募禁止' }
 
+    let quizNote = ''
     for (let round = 0; round < 4; round++) {
+      if (round === 0) {
+        const qz = await solveQuiz(frame, `${landing}\n${text}`)
+        if (qz.asked) {
+          quizNote = `・クイズ${qz.answered}/${qz.asked}(${qz.via})`
+          if (qz.answered < qz.asked) return { status: 'skip', reason: `クイズに答えられない(${qz.answered}/${qz.asked})` }
+        }
+      }
       const r = await frame.evaluate(`(${filler})(${JSON.stringify(profile)})`)
       if (r.login) return { status: 'skip', reason: 'ログインが必要' }
       if (r.captcha) return { status: 'skip', reason: '画像認証あり' }
       if (round === 0 && r.filled === 0) return { status: 'skip', reason: '入力欄が個人情報フォームでない' }
       if (r.missing.length) return { status: 'skip', reason: `必須項目が埋められない(${r.missing.slice(0, 3).join(',')})` }
-      if (!SUBMIT) return { status: 'dry-ok', reason: `入力${r.filled}・アンケート${r.survey}・同意${r.consent}` }
+      if (!SUBMIT) return { status: 'dry-ok', reason: `入力${r.filled}・アンケート${r.survey}・同意${r.consent}${quizNote}` }
 
       const before = p.url()
       const btn = await clickSubmit(frame)
@@ -217,7 +227,7 @@ async function applyOne(it) {
       await p.waitForTimeout(1500)
       const after = await pageText(p)
       if (DONE.test(after) && !/(必須|入力してください|正しく入力|エラー)/.test(after.slice(0, 2000))) {
-        return { status: 'applied', reason: /メール.{0,10}(確認|認証|届)/.test(after) ? '確認メールあり' : '' }
+        return { status: 'applied', reason: (/メール.{0,10}(確認|認証|届)/.test(after) ? '確認メールあり' : '') + quizNote }
       }
       // 確認画面など：次のフレームを探してもう一度
       const nf = await bestFrame(p)

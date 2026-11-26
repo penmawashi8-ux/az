@@ -52,13 +52,15 @@ jobs:
         continue-on-error: true
         env:
           KENSHO_PROFILE: ${{ secrets.KENSHO_PROFILE }}
+          # 任意：クイズをClaudeで解く（未設定ならページ本文から推測）
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           # 0 = 入力までの試運転 / 1 = 実際に送信
           KENSHO_SUBMIT: "1"
           KENSHO_DATA: data/data.json
           KENSHO_APPLIED: data/applied.json
         run: |
           if [ -z "$KENSHO_PROFILE" ]; then echo "KENSHO_PROFILE secret not set; skip"; exit 0; fi
-          cd kensho && npm init -y >/dev/null && npm i --no-save --no-audit --no-fund playwright@1.49.1 >/dev/null
+          cd kensho && npm init -y >/dev/null && npm i --no-save --no-audit --no-fund playwright@1.49.1 @anthropic-ai/sdk@latest >/dev/null
           npx playwright install --with-deps chromium >/dev/null
           cd .. && node kensho/autoapply.mjs
 
