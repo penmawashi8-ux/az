@@ -58,7 +58,7 @@ const PROFILE_KEY = 'kensho.profile.v1'
 const RUN_KEY = 'kensho.run.v1'
 const USERSCRIPT_PATH = '/kensho/x-oneclick.user.js'
 // public/kensho/x-oneclick.user.js の @version と合わせる
-const USERSCRIPT_VERSION = '1.0.1'
+const USERSCRIPT_VERSION = '1.0.2'
 
 function readLS<T>(key: string, fallback: T): T {
   try {
@@ -881,12 +881,14 @@ export default function KenshoList() {
                       user: xp.user,
                       id: xp.id,
                       like: wantLike,
+                      repost: wantRepost,
                       back: location.origin + location.pathname,
                     }
-                    location.href = `${xp.url}#kensho=${encodeURIComponent(JSON.stringify(job))}`
+                    const j = encodeURIComponent(JSON.stringify(job))
+                    location.href = `${xp.url}?kensho=${j}#kensho=${j}`
                   }}
                 >
-                  ワンボタン応募（フォロー・リポスト{wantLike ? '・いいね' : ''}）
+                  ワンボタン応募（フォロー{wantRepost ? '・リポスト' : ''}{wantLike ? '・いいね' : ''}）
                 </button>
               )}
               {!ext && (

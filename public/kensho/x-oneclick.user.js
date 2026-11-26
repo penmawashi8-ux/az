@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         懸賞リスト ワンボタン応募
 // @namespace    penmawashi8-ux.kensho
-// @version      1.0.1
+// @version      1.0.2
 // @description  懸賞リストの「ワンボタン応募」から開いたXの投稿で、フォロー・リポスト・いいねを押して懸賞リストへ戻る
 // @match        https://x.com/*
 // @match        https://twitter.com/*
@@ -9,7 +9,7 @@
 // @match        https://penmawashi8-ux.github.io/az/kensho/*
 // @downloadURL  https://penmawashi8-ux.github.io/az/kensho/x-oneclick.user.js
 // @updateURL    https://penmawashi8-ux.github.io/az/kensho/x-oneclick.user.js
-// @run-at       document-idle
+// @run-at       document-start
 // @grant        none
 // ==/UserScript==
 
@@ -19,13 +19,18 @@
  */
 ;(function () {
   'use strict'
-  const VERSION = '1.0.1'
+  const VERSION = '1.0.2'
   const JOB_KEY = 'kensho.xjob'
 
   // 懸賞リスト側：このスクリプトが入っていることを知らせる
   if (location.hostname.endsWith('github.io')) {
-    document.documentElement.dataset.kenshoX = VERSION
-    window.dispatchEvent(new Event('kensho-x-ready'))
+    const ready = () => {
+      document.documentElement.dataset.kenshoX = VERSION
+      window.dispatchEvent(new Event('kensho-x-ready'))
+    }
+    ready()
+    document.addEventListener('DOMContentLoaded', ready)
+    window.addEventListener('load', ready)
     return
   }
 
@@ -44,14 +49,24 @@
   }
 
   function loadJob() {
-    const m = location.hash.match(/#kensho=(.+)$/)
-    if (m) {
+    // 目印は ?kensho=… と #kensho=… の両方で渡される（Xの画面書き換えでどちらかが消えても拾えるように）
+    const raw = new URLSearchParams(location.search).get('kensho') || (location.hash.match(/#kensho=(.+)$/) || [])[1]
+    if (raw) {
       try {
-        const job = JSON.parse(decodeURIComponent(m[1]))
+        let txt = raw
+        try {
+          txt = decodeURIComponent(raw)
+        } catch (e) {
+          /* already decoded */
+        }
+        const job = JSON.parse(txt)
         job.stage = 'post'
         job.log = []
         sessionStorage.setItem(JOB_KEY, JSON.stringify(job))
-        history.replaceState(null, '', location.pathname + location.search)
+        const q = new URLSearchParams(location.search)
+        q.delete('kensho')
+        const qs = q.toString()
+        history.replaceState(history.state, '', location.pathname + (qs ? '?' + qs : ''))
         return job
       } catch (e) {
         return null
@@ -67,7 +82,11 @@
 
   let bar
   function banner(text, job, showBack) {
-    if (!bar) {
+    if (!document.body) {
+      document.addEventListener('DOMContentLoaded', () => banner(text, job, showBack), { once: true })
+      return
+    }
+    if (!bar || !bar.isConnected) {
       bar = document.createElement('div')
       bar.style.cssText =
         'position:fixed;left:8px;right:8px;bottom:12px;z-index:2147483647;background:#c2502a;color:#fff;font:600 15px/1.5 system-ui,sans-serif;padding:12px 14px;border-radius:12px;box-shadow:0 4px 16px rgba(0,0,0,.3);display:flex;gap:10px;align-items:center'
@@ -115,8 +134,10 @@
     if (!art) return fail(job, 'ポストが見つかりません（ログインしていないかも）')
     await pause()
 
-    // リポスト
-    if (art.querySelector('[data-testid="unretweet"]')) job.log.push('リポスト済み')
+    // リポスト（引用ポストだけが条件の懸賞ではしない）
+    if (job.repost === false) {
+      /* skip */
+    } else if (art.querySelector('[data-testid="unretweet"]')) job.log.push('リポスト済み')
     else {
       const rt = art.querySelector('[data-testid="retweet"]')
       if (!rt) return fail(job, 'リポストボタンが見つかりません')
