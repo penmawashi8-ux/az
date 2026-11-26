@@ -18,6 +18,8 @@ type Item = {
   image?: string | null
   xPost?: string | null
   xNeeds?: string[]
+  xTags?: string[]
+  xPrompt?: string
   webOpen?: boolean
   methods: string[]
   entryUrl: string | null
@@ -95,6 +97,17 @@ const EXCLUDED = (it: Item) =>
   /工事|取付|取り付け|施工|リフォーム|設置費|交換費/.test(`${it.prizeShort || ''} ${it.prize} ${it.title}`) ||
   /クーポン|割引券|値引|円引|[%％]\s*OFF|OFF券|優待券|割引/.test(`${it.prizeShort || ''} ${it.prize}`)
 const isX = (it: Item) => it.methods.includes('x') && !!xPostOf(it)
+
+/** 返信・引用用の文面（指定ハッシュタグ付き）。欲しい商品を聞かれていれば賞品名を入れる */
+function defaultPostText(it: Item): string {
+  const p = it.xPrompt || ''
+  const prize = it.prizeShort ? it.prizeShort.replace(/^[「『]|[」』]$/g, '') : ''
+  let body = '素敵なキャンペーンありがとうございます！応募します。当たったら嬉しいです。'
+  if (/欲しい|どれ|希望/.test(p) && prize) body = `${prize}が欲しいです！ぜひ当たりますように。`
+  else if (/感想|好き|楽しみ|応援/.test(p)) body = 'いつも楽しみにしています！これからも応援しています。'
+  const tags = (it.xTags || []).join(' ')
+  return tags ? `${body}\n${tags}` : body
+}
 
 function daysLeft(deadline: string | null): number | null {
   if (!deadline) return null
@@ -351,7 +364,7 @@ export default function KenshoList() {
   const [showProfile, setShowProfile] = useState(false)
   const [undo, setUndo] = useState<{ id: string; prev?: Mark } | null>(null)
   // 連続応募モード（X）：対象IDのキューと現在位置、押したステップ
-  const [run, setRun] = useState<{ queue: string[]; i: number; done: Record<string, boolean> } | null>(null)
+  const [run, setRun] = useState<{ queue: string[]; i: number; done: Record<string, boolean>; text?: string } | null>(null)
 
   useEffect(() => {
     setMarks(readLS(MARKS_KEY, {}))
@@ -689,7 +702,7 @@ export default function KenshoList() {
         const finish = (m?: Mark) => {
           if (cur && m) mark(cur.id, m, false)
           if (run.i + 1 >= run.queue.length) setRun(null)
-          else setRun({ ...run, i: run.i + 1, done: {} })
+          else setRun({ ...run, i: run.i + 1, done: {}, text: undefined })
         }
         if (!cur || !xp) return null
         // 押す順番：フォロー → リポスト →（条件にあれば）いいね。最後を押すと自動で応募済みにして次の懸賞へ
@@ -699,10 +712,20 @@ export default function KenshoList() {
           { key: 'rt', label: 'リポスト', href: `https://x.com/intent/retweet?tweet_id=${xp.id}` },
         ]
         if (!needs || needs.includes('like')) steps.push({ key: 'like', label: 'いいね', href: `https://x.com/intent/like?tweet_id=${xp.id}` })
+        // 返信・引用・ハッシュタグ投稿が条件なら、文面入りの投稿画面を開く手順を足す
+        const postText = run.text ?? defaultPostText(cur)
+        const enc = encodeURIComponent
+        if (needs?.includes('reply'))
+          steps.push({ key: 'reply', label: '返信する', href: `https://x.com/intent/post?in_reply_to=${xp.id}&text=${enc(postText)}` })
+        if (needs?.includes('quote'))
+          steps.push({ key: 'quote', label: '引用ポストする', href: `https://x.com/intent/post?text=${enc(postText)}&url=${enc(xp.url)}` })
+        if (needs?.includes('hashtag') && !needs.includes('reply') && !needs.includes('quote'))
+          steps.push({ key: 'tagpost', label: 'ハッシュタグ付きで投稿', href: `https://x.com/intent/post?text=${enc(postText)}` })
+        const writes = steps.some((st) => ['reply', 'quote', 'tagpost'].includes(st.key))
+        // 自分で書く必要がある内容（予想・写真など）
+        const manual = /予想|クイズ|答え|写真|画像|動画|スクショ|スクリーンショット|理由|エピソード/.test(cur.xPrompt || '')
         const si = steps.findIndex((st) => !run.done[st.key])
         const next = si >= 0 ? steps[si] : null
-        const extra = (needs || []).filter((n) => n !== 'like')
-        const EXTRA_LABEL: Record<string, string> = { quote: '引用ポスト', reply: '返信', hashtag: 'ハッシュタグ付き投稿' }
         return (
           <div className="k-modal" role="dialog" aria-modal="true" aria-label="連続応募モード">
             <div className="k-sheet">
@@ -736,13 +759,18 @@ export default function KenshoList() {
                   </li>
                 ))}
               </ol>
-              {extra.length > 0 && (
-                <p className="k-warn">
-                  この懸賞は{extra.map((n) => EXTRA_LABEL[n]).join('・')}も条件です。
+              {writes && (
+                <div className="k-compose">
+                  {cur.xPrompt && <p className="k-note">条件：{cur.xPrompt}</p>}
+                  {manual && <p className="k-warn">答えや写真が必要な条件です。文面を書き換えてから投稿してください。</p>}
+                  <label className="k-note" htmlFor="k-posttext">
+                    投稿する文面（Xで投稿ボタンを押す前にも直せます）
+                  </label>
+                  <textarea id="k-posttext" className="k-posttext" rows={3} value={postText} onChange={(e) => setRun({ ...run, text: e.target.value })} />
                   <a className="k-link" href={xp.url} target="_blank" rel="noopener noreferrer">
-                    投稿を開く
+                    元の投稿を見る
                   </a>
-                </p>
+                </div>
               )}
               {next ? (
                 <a
@@ -755,7 +783,7 @@ export default function KenshoList() {
                     e.preventDefault()
                     window.open(next.href, '_blank', 'noopener')
                     const done = { ...run.done, [next.key]: true }
-                    if (si === steps.length - 1 && extra.length === 0) {
+                    if (si === steps.length - 1) {
                       // 最後の手順：開いたら自動で応募済みにして次へ
                       setTimeout(() => finish('applied'), 300)
                     } else setRun({ ...run, done })

@@ -269,6 +269,27 @@ def extract_x_needs(text: str) -> list[str]:
     return needs
 
 
+# 指定ハッシュタグ（#〜 / ＃〜）。キャンペーン共通の一般的なものは除く
+HASHTAG_RE = re.compile(r"[#＃]([^\s#＃、。,.!！?？「」『』()（）【】\[\]<>＜＞・/／:：;；\"'”’]{2,40})")
+
+
+def extract_x_tags(text: str) -> list[str]:
+    tags = []
+    for m in HASHTAG_RE.finditer(norm(text)):
+        t = "#" + m.group(1)
+        if t not in tags and not re.fullmatch(r"#(PR|pr|拡散希望|プレゼント企画)", t):
+            tags.append(t)
+    return tags[:5]
+
+
+def extract_x_prompt(text: str) -> str:
+    """返信・引用で答えることを求められている内容（例：「欲しい商品をコメント」）"""
+    for line in re.split(r"[\n。]", norm(text)):
+        if re.search(r"返信|リプライ|コメント|引用", line) and len(line) < 160:
+            return line.strip()
+    return ""
+
+
 def extract_image(page: str) -> str | None:
     m = re.search(r'<meta[^>]+property="og:image"[^>]+content="([^"]+)"', page) or \
         re.search(r'<meta[^>]+content="([^"]+)"[^>]+property="og:image"', page)
@@ -487,6 +508,8 @@ def analyze_koubo(cand: dict, page: str) -> dict | None:
         "image": extract_image(page),
         "xPost": extract_x_post(f'href="{site}"') if site else None,
         "xNeeds": extract_x_needs(how) if site and "x.com" in site else [],
+        "xTags": extract_x_tags(how + " " + body) if site and "x.com" in site else [],
+        "xPrompt": extract_x_prompt(how) if site and "x.com" in site else "",
         "methods": methods,
         "entryUrl": site,
         "howTo": how[:300],
@@ -550,6 +573,8 @@ def analyze_chance(cand: dict, page: str) -> dict | None:
         "image": extract_image(page),
         "xPost": None,
         "xNeeds": [],
+        "xTags": [],
+        "xPrompt": "",
         "methods": methods,
         # 応募ページへの転送リンク（本人がタップする用。ロボットは辿らない）
         "entryUrl": f"https://www.chance.com/jump.srv?id={cid}",
@@ -619,6 +644,8 @@ def analyze(cand: dict, page: str) -> dict | None:
         "image": extract_image(page),
         "xPost": extract_x_post(frag),
         "xNeeds": extract_x_needs(text),
+        "xTags": extract_x_tags(text) if extract_x_post(frag) else [],
+        "xPrompt": extract_x_prompt(text) if extract_x_post(frag) else "",
         "methods": extract_methods(full),
         "entryUrl": extract_entry_url(frag),
         "webOpen": False,
@@ -674,7 +701,7 @@ def main() -> int:
 
     # 旧形式（賞品名・画像なし）のアイテムを再解析
     for it in list(items.values()):
-        if it["source"] != "koubo" and ("prizeShort" not in it or "xNeeds" not in it or "webOpen" not in it):
+        if "xTags" not in it or (it["source"] not in ("koubo", "chance") and ("prizeShort" not in it or "xNeeds" not in it or "webOpen" not in it)):
             cands.setdefault(it["url"], {"source": it["source"], "url": it["url"], "title": it["title"],
                                          "desc": "", "company": it.get("company", ""), "published": it.get("published", "")})
 
