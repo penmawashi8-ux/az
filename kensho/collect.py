@@ -34,6 +34,9 @@ FEEDS = [
     ("prtimes", "https://prtimes.jp/index.rdf"),
     ("atpress", "https://www.atpress.ne.jp/rss/index.rdf"),
 ]
+# 解析ルールの版。上げると収集済みの懸賞も次回以降に読み直す
+PARSE_VERSION = 2
+
 KEYWORD_PAGES = [
     # チャンスイット：応募先へのリンク(jump.srv)は robots.txt でロボット禁止なので、
     # 一覧に載せて本人がタップして応募する（自動応募はしない）
@@ -45,6 +48,8 @@ KEYWORD_PAGES = [
         "luxury", "pet", "prize", "talent", "travel-voucher")],
     ("prtimes", "https://prtimes.jp/topics/keywords/" + urllib.parse.quote("プレゼントキャンペーン")),
     ("prtimes", "https://prtimes.jp/topics/keywords/" + urllib.parse.quote("キャンペーン")),
+    *[("prtimes", "https://prtimes.jp/topics/keywords/" + urllib.parse.quote(k))
+      for k in ("プレゼント", "抽選", "アンケート", "プレゼント企画", "懸賞")],
 ]
 
 # 一覧段階の粗いフィルタ（タイトル+概要）
@@ -539,8 +544,11 @@ def analyze_koubo(cand: dict, page: str) -> dict | None:
         "entryUrl": site,
         "howTo": how[:300],
         # 会員登録不要・Webフォームで応募・購入/郵送/来店なし → 自動応募の対象
+        # ハガキ「または」Webで応募できるものはWebで応募する（ハガキだけ・購入・来店が必要なものは除く）
         "webOpen": (member.startswith("不要") and "form" in methods and not sns_only
-                    and not ({"purchase", "hagaki", "visit"} & set(methods))),
+                    and not ({"purchase", "visit"} & set(methods))
+                    and not re.search(r"アプリ(を|内|から|で)|会員登録|ログイン|メンバー登録", how)),
+        "pv": PARSE_VERSION,
         "addedAt": dt.datetime.now(JST).isoformat(timespec="seconds"),
     }
     if is_excluded(item):
@@ -606,6 +614,7 @@ def analyze_chance(cand: dict, page: str) -> dict | None:
         "entryUrl": f"https://www.chance.com/jump.srv?id={cid}",
         "howTo": desc[:300],
         "webOpen": False,
+        "pv": PARSE_VERSION,
         "addedAt": dt.datetime.now(JST).isoformat(timespec="seconds"),
     }
     if is_excluded(item):
@@ -683,8 +692,9 @@ def analyze(cand: dict, page: str) -> dict | None:
     if is_excluded(item):
         return None
     eu = item.get("entryUrl") or ""
+    item["pv"] = PARSE_VERSION
     item["webOpen"] = bool(eu and not SNS_HOST_RE.match(eu) and "form" in item["methods"]
-                           and not ({"purchase", "hagaki", "visit"} & set(item["methods"]))
+                           and not ({"purchase", "visit"} & set(item["methods"]))
                            and not re.search(r"会員登録|ログイン|マイページ", text))
     item["score"] = score(item)
     return item
@@ -728,7 +738,7 @@ def main() -> int:
 
     # 旧形式（賞品名・画像なし）のアイテムを再解析
     for it in list(items.values()):
-        if "xPhrases" not in it or (it["source"] not in ("koubo", "chance") and ("prizeShort" not in it or "xNeeds" not in it or "webOpen" not in it)):
+        if it.get("pv", 0) < PARSE_VERSION or "xPhrases" not in it or (it["source"] not in ("koubo", "chance") and ("prizeShort" not in it or "xNeeds" not in it or "webOpen" not in it)):
             cands.setdefault(it["url"], {"source": it["source"], "url": it["url"], "title": it["title"],
                                          "desc": "", "company": it.get("company", ""), "published": it.get("published", "")})
 
