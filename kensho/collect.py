@@ -35,7 +35,7 @@ FEEDS = [
     ("atpress", "https://www.atpress.ne.jp/rss/index.rdf"),
 ]
 # 解析ルールの版。上げると収集済みの懸賞も次回以降に読み直す
-PARSE_VERSION = 3
+PARSE_VERSION = 4
 
 KEYWORD_PAGES = [
     # チャンスイット：応募先へのリンク(jump.srv)は robots.txt でロボット禁止なので、
@@ -325,6 +325,23 @@ def extract_x_phrases(text: str) -> list[str]:
     return out[:3]
 
 
+def extract_x_follows(text: str) -> list[str]:
+    """フォローが条件になっているアカウント（複数指定に対応）"""
+    out = []
+    for line in re.split(r"[\n。]", norm(text)):
+        if "フォロー" not in line:
+            continue
+        for m in re.finditer(r"@([A-Za-z0-9_]{1,15})", line):
+            if m.group(1) not in out:
+                out.append(m.group(1))
+    return out[:5]
+
+
+def needs_image_tag(text: str) -> bool:
+    """指定ハッシュタグが画像の中にしか書かれていない"""
+    return bool(re.search(r"画像(に|内|の中)(記載|書かれ|ある|表示)|画像に記載の|画像内の(ハッシュタグ|#)", norm(text)))
+
+
 def extract_x_prompt(text: str) -> str:
     """返信・引用で答えることを求められている内容（例：「欲しい商品をコメント」）"""
     for line in re.split(r"[\n。]", norm(text)):
@@ -558,6 +575,8 @@ def analyze_koubo(cand: dict, page: str) -> dict | None:
         "xTags": extract_x_tags(how + " " + body) if site and "x.com" in site else [],
         "xPrompt": extract_x_prompt(how) if site and "x.com" in site else "",
         "xPhrases": extract_x_phrases(how) if site and "x.com" in site else [],
+        "xFollows": extract_x_follows(how) if site and "x.com" in site else [],
+        "xImageTag": needs_image_tag(how) if site and "x.com" in site else False,
         "methods": methods,
         "entryUrl": site,
         "howTo": how[:300],
@@ -627,6 +646,8 @@ def analyze_chance(cand: dict, page: str) -> dict | None:
         "xTags": [],
         "xPrompt": "",
         "xPhrases": [],
+        "xFollows": [],
+        "xImageTag": False,
         "methods": methods,
         # 応募ページへの転送リンク（本人がタップする用。ロボットは辿らない）
         "entryUrl": f"https://www.chance.com/jump.srv?id={cid}",
@@ -700,6 +721,8 @@ def analyze(cand: dict, page: str) -> dict | None:
         "xTags": extract_x_tags(method_text(text)) if extract_x_post(frag) else [],
         "xPrompt": extract_x_prompt(method_text(text)) if extract_x_post(frag) else "",
         "xPhrases": extract_x_phrases(method_text(text)) if extract_x_post(frag) else [],
+        "xFollows": extract_x_follows(method_text(text)) if extract_x_post(frag) else [],
+        "xImageTag": needs_image_tag(method_text(text)) if extract_x_post(frag) else False,
         "methods": extract_methods(full),
         "entryUrl": extract_entry_url(frag),
         "webOpen": False,

@@ -21,6 +21,8 @@ type Item = {
   xTags?: string[]
   xPrompt?: string
   xPhrases?: string[]
+  xFollows?: string[]
+  xImageTag?: boolean
   webOpen?: boolean
   methods: string[]
   entryUrl: string | null
@@ -812,6 +814,11 @@ export default function KenshoList() {
               ...(wantRepost ? [{ key: 'rt', label: 'リポスト', href: `https://x.com/intent/retweet?tweet_id=${xp.id}` }] : []),
             ]
         if (!oneTrip && wantLike) steps.push({ key: 'like', label: 'いいね', href: `https://x.com/intent/like?tweet_id=${xp.id}` })
+        // 投稿者以外にもフォローが必要なアカウント（例：@ajipon_mizkan と @officialikinari をフォロー）
+        for (const h of cur.xFollows || []) {
+          if (h.toLowerCase() === xp.user.toLowerCase()) continue
+          steps.push({ key: `follow:${h}`, label: `@${h} もフォロー`, href: `https://x.com/intent/follow?screen_name=${h}` })
+        }
         // 返信・引用・ハッシュタグ投稿が条件なら、文面入りの投稿画面を開く手順を足す
         const postText = run.text ?? defaultPostText(cur)
         const enc = encodeURIComponent
@@ -826,6 +833,9 @@ export default function KenshoList() {
         const manual = /予想|クイズ|答え|写真|画像|動画|スクショ|スクリーンショット|理由|エピソード/.test(cur.xPrompt || '')
         const si = steps.findIndex((st) => !run.done[st.key])
         const next = si >= 0 ? steps[si] : null
+        // ハッシュタグが画像の中にしか書かれていない懸賞：入力されるまで投稿に進ませない
+        const tagMissing = !!cur.xImageTag && !/[#＃]\S/.test(postText)
+        const blocked = !!next && tagMissing && ['reply', 'quote', 'tagpost'].includes(next.key)
         return (
           <div className="k-modal" role="dialog" aria-modal="true" aria-label="連続応募モード">
             <div className="k-sheet">
@@ -863,6 +873,15 @@ export default function KenshoList() {
                 <div className="k-compose">
                   {cur.xPrompt && <p className="k-note">条件：{cur.xPrompt}</p>}
                   {manual && <p className="k-warn">答えや写真が必要な条件です。文面を書き換えてから投稿してください。</p>}
+                  {cur.xImageTag && (
+                    <p className="k-warn">
+                      指定のハッシュタグは投稿の<b>画像の中</b>に書かれています。
+                      <a className="k-link" href={xp.url} target="_blank" rel="noopener noreferrer">
+                        元の投稿の画像
+                      </a>
+                      を見て、下の文面に「#〜」を入れてください（入れるまで投稿に進めません）。
+                    </p>
+                  )}
                   <label className="k-note" htmlFor="k-posttext">
                     投稿する文面（Xで投稿ボタンを押す前にも直せます）
                   </label>
@@ -913,7 +932,11 @@ export default function KenshoList() {
                   を開いて追加してください。XにはSafari（またはPCのブラウザ）でログインしておく必要があります。
                 </details>
               )}
-              {next && ext && ['follow', 'rt', 'like', 'post'].includes(next.key) ? null : next ? (
+              {blocked ? (
+                <button className="k-btn primary k-big" disabled>
+                  画像のハッシュタグを入力してください
+                </button>
+              ) : next && ext && ['follow', 'rt', 'like', 'post'].includes(next.key) ? null : next ? (
                 <a
                   className="k-btn primary k-big"
                   href={next.href}
