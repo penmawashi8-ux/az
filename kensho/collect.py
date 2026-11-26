@@ -35,7 +35,7 @@ FEEDS = [
     ("atpress", "https://www.atpress.ne.jp/rss/index.rdf"),
 ]
 # 解析ルールの版。上げると収集済みの懸賞も次回以降に読み直す
-PARSE_VERSION = 2
+PARSE_VERSION = 3
 
 KEYWORD_PAGES = [
     # チャンスイット：応募先へのリンク(jump.srv)は robots.txt でロボット禁止なので、
@@ -259,6 +259,23 @@ def extract_x_post(frag: str) -> str | None:
     return f"https://x.com/{m.group(1)}/status/{m.group(2)}" if m else None
 
 
+METHOD_HEAD_RE = re.compile(r"(応募|参加)(方法|手順|ステップ|条件)|STEP|ステップ|キャンペーン(概要|内容|詳細)|応募のしかた")
+# 「①」等はNFKC正規化で「1」になるので、行頭の数字＋（記号 or @ or 日本語）を手順の行とみなす
+METHOD_STEP_RE = re.compile(r"^\s*(?:[①-⑩]|[1-9](?:[.．、)）:：]|⃣|(?=[@\u3000-\u30ff\u4e00-\u9fff\uff01-\uff5e]))|STEP\s*\d|\(\d\))")
+
+
+def method_text(text: str) -> str:
+    """記事全体ではなく「応募方法」の部分と手順の行だけを取り出す（会社紹介や機能説明を条件と誤読しないため）"""
+    lines = [l.strip() for l in norm(text).split("\n") if l.strip()]
+    keep = []
+    for i, l in enumerate(lines):
+        if METHOD_HEAD_RE.search(l) and len(l) < 200:
+            keep.extend(lines[i:i + 8])
+        elif METHOD_STEP_RE.match(l) and re.search(r"フォロー|リポスト|リツイート|RT|いいね|引用|返信|リプライ|コメント|投稿|ハッシュタグ|#", l):
+            keep.append(l)
+    return "\n".join(dict.fromkeys(keep))
+
+
 def extract_x_needs(text: str) -> list[str]:
     """Xキャンペーンの参加条件（フォロー・リポストは基本なので、追加条件だけ拾う）"""
     t = re.sub(r"\s+", "", text)
@@ -269,7 +286,8 @@ def extract_x_needs(text: str) -> list[str]:
     if quote:
         needs.append("quote")
     # 「コメントを入れて引用ポスト」のコメントは引用の中身なので、返信とは数えない
-    if re.search(r"返信|リプライ|コメント欄", t) or (not quote and re.search(r"コメント(?:して|を|で)", t)):
+    # 実際に返信を求める書き方のときだけ（「リマインドリプライ機能」のような説明文には反応しない）
+    if re.search(r"(?:返信|リプライ)(?:して|で|する|を(?:送|し)|欄|に)|コメント欄", t) or (not quote and re.search(r"(?:この投稿|ポスト|ツイート)に.{0,15}コメント|コメント(?:して|で応募)", t)):
         needs.append("reply")
     # 通常のリポスト（引用リポストとは別）が条件か
     if re.search(r"(?<!引用)(?:リポスト|リツイート|RT)(?!キャンペーン)", t):
@@ -678,10 +696,10 @@ def analyze(cand: dict, page: str) -> dict | None:
         "prizeShort": "",
         "image": extract_image(page),
         "xPost": extract_x_post(frag),
-        "xNeeds": extract_x_needs(text),
-        "xTags": extract_x_tags(text) if extract_x_post(frag) else [],
-        "xPrompt": extract_x_prompt(text) if extract_x_post(frag) else "",
-        "xPhrases": extract_x_phrases(text) if extract_x_post(frag) else [],
+        "xNeeds": extract_x_needs(method_text(text)),
+        "xTags": extract_x_tags(method_text(text)) if extract_x_post(frag) else [],
+        "xPrompt": extract_x_prompt(method_text(text)) if extract_x_post(frag) else "",
+        "xPhrases": extract_x_phrases(method_text(text)) if extract_x_post(frag) else [],
         "methods": extract_methods(full),
         "entryUrl": extract_entry_url(frag),
         "webOpen": False,
