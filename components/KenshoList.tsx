@@ -685,6 +685,11 @@ export default function KenshoList() {
                         {h.deadline && <span>締切 {h.deadline.slice(5).replace('-', '/')}{d !== null && d < 0 ? '（終了）' : ''}</span>}
                       </div>
                       {h.status === 'unknown' && <p className="k-bot">送信済み（完了画面は確認できず）</p>}
+                      {h.how === '手動' && (
+                        <button className="k-link k-undo" onClick={() => mark(h.id, undefined)}>
+                          未応募に戻す
+                        </button>
+                      )}
                       {h.note && <p className="k-bot">{h.note}</p>}
                       {OKS.includes(h.status) && h.reason && h.reason !== '完了画面を確認できず' && (
                         <p className="k-bot">{h.reason.replace(/^・/, '').replace('メール欄なし', '応募フォームにメール欄なし（確認メールは届きません）')}</p>
