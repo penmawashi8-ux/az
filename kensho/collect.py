@@ -35,7 +35,7 @@ FEEDS = [
     ("atpress", "https://www.atpress.ne.jp/rss/index.rdf"),
 ]
 # 解析ルールの版。上げると収集済みの懸賞も次回以降に読み直す
-PARSE_VERSION = 5
+PARSE_VERSION = 6
 
 KEYWORD_PAGES = [
     # チャンスイット：応募先へのリンク(jump.srv)は robots.txt でロボット禁止なので、
@@ -312,6 +312,7 @@ def extract_x_tags(text: str) -> list[str]:
     t0 = norm(text)
     found = ["#" + m.group(1) for m in HASHTAG_RE.finditer(t0)] + ["#" + m.group(1) for m in BRACKET_TAG_RE.finditer(t0)] + ["#" + m.group(1) for m in ATTACH_TAG_RE.finditer(t0)]
     for t in found:
+        t = "#" + t.lstrip("#＃")  # 「#〇〇」をつけて → ##〇〇 にならないように
         if t not in tags and not re.fullmatch(r"#(PR|pr|拡散希望|プレゼント企画)", t):
             tags.append(t)
     return tags[:5]
