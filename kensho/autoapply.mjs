@@ -191,6 +191,27 @@ function mask(t) {
 // 自分の情報では答えられない項目（出産予定日・会員番号・希望店舗など）→ 応募資格がない可能性
 const UNFILLABLE = /予定日|お子様|子ども|子供|学年|学校名|会員番号|会員ID|お客様番号|店舗|店名|シリアル|コード|レシート|購入日|購入店|expected|due_?date|member_?(no|id)|shop|store|serial|receipt|child|kids/i
 
+const SCAM_TEXT = /当選確定|必ず当たる|あなたが選ばれ|おめでとうございます[^。]{0,10}当選|送料(を|は)?(ご)?負担|手数料[^。]{0,10}(お支払|振込|必要)|代引き|事務手数料/
+const SENSITIVE_FIELD = /card|cvv|cvc|security.?code|有効期限|カード番号|口座|bank|account.?number|暗証|pin\b|マイナンバー|my.?number|個人番号|password|パスワード/i
+async function checkRisk(p, frame, text) {
+  const url = frame.url()
+  if (!url.startsWith('https://')) return '暗号化されていないページ'
+  if (SCAM_TEXT.test(text)) return '金銭要求・詐欺的な文言'
+  const sens = await frame
+    .evaluate((src) => {
+      const re = new RegExp(src, 'i')
+      return Array.from(document.querySelectorAll('input, select, textarea')).some((e) =>
+        re.test(`${e.name} ${e.id} ${e.placeholder || ''} ${e.getAttribute('autocomplete') || ''} ${(e.labels && e.labels[0]?.innerText) || ''}`),
+      )
+    }, SENSITIVE_FIELD.source)
+    .catch(() => false)
+  if (sens) return 'カード・口座・パスワード等の入力欄'
+  // 送信先が別ドメインでかつ http の場合も危険
+  const insecurePost = await frame.evaluate(() => Array.from(document.forms).some((f) => f.action && f.action.startsWith('http://'))).catch(() => false)
+  if (insecurePost) return '暗号化されない送信先'
+  return ''
+}
+
 async function applyOne(it, reapply = false) {
   const trace = []
   let hasEmail = false
@@ -222,6 +243,9 @@ async function applyOne(it, reapply = false) {
       return { status: 'skip', reason: '応募フォームではない（問い合わせ/会員登録等）' }
     const text = await pageText(p)
     if (NO_AUTO.test(text)) return { status: 'skip', reason: '規約で自動応募禁止' }
+    // 怪しい懸賞・危険なフォームには個人情報を入れない
+    const risk = await checkRisk(p, frame, `${landing}\n${text}`)
+    if (risk) return { status: 'skip', reason: `安全のため応募せず(${risk})` }
     if (reapply && NO_DUP.test(`${landing}\n${text}`)) return { status: 'keep', reason: '規約で重複応募禁止のため再応募せず' }
 
     let quizNote = ''
