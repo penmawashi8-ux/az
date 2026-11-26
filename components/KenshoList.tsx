@@ -17,6 +17,7 @@ type Item = {
   prizeShort?: string
   image?: string | null
   xPost?: string | null
+  xNeeds?: string[]
   methods: string[]
   entryUrl: string | null
   score: number
@@ -528,18 +529,17 @@ export default function KenshoList() {
           else setRun({ ...run, i: run.i + 1, done: {} })
         }
         if (!cur || !xp) return null
-        const step = (key: string, label: string, href: string) => (
-          <a
-            className={`k-step ${run.done[key] ? 'done' : ''}`}
-            href={href}
-            target="_blank"
-            rel="noopener noreferrer"
-            onClick={() => setRun({ ...run, done: { ...run.done, [key]: true } })}
-          >
-            {run.done[key] ? '✓ ' : ''}
-            {label}
-          </a>
-        )
+        // 押す順番：フォロー → リポスト →（条件にあれば）いいね。最後を押すと自動で応募済みにして次の懸賞へ
+        const needs = cur.xNeeds
+        const steps: { key: string; label: string; href: string }[] = [
+          { key: 'follow', label: `@${xp.user} をフォロー`, href: `https://x.com/intent/follow?screen_name=${xp.user}` },
+          { key: 'rt', label: 'リポスト', href: `https://x.com/intent/retweet?tweet_id=${xp.id}` },
+        ]
+        if (!needs || needs.includes('like')) steps.push({ key: 'like', label: 'いいね', href: `https://x.com/intent/like?tweet_id=${xp.id}` })
+        const si = steps.findIndex((st) => !run.done[st.key])
+        const next = si >= 0 ? steps[si] : null
+        const extra = (needs || []).filter((n) => n !== 'like')
+        const EXTRA_LABEL: Record<string, string> = { quote: '引用ポスト', reply: '返信', hashtag: 'ハッシュタグ付き投稿' }
         return (
           <div className="k-modal" role="dialog" aria-modal="true" aria-label="連続応募モード">
             <div className="k-sheet">
@@ -566,23 +566,45 @@ export default function KenshoList() {
                   </div>
                 </div>
               </div>
-              <div className="k-steps">
-                {step('follow', `① @${xp.user} をフォロー`, `https://x.com/intent/follow?screen_name=${xp.user}`)}
-                {step('rt', '② リポスト', `https://x.com/intent/retweet?tweet_id=${xp.id}`)}
-                {step('like', '③ いいね', `https://x.com/intent/like?tweet_id=${xp.id}`)}
-              </div>
-              <p className="k-note">
-                引用・返信・ハッシュタグが条件のこともあります。
-                <a className="k-link" href={xp.url} target="_blank" rel="noopener noreferrer">
-                  投稿を開いて条件を確認
+              <ol className="k-progress" aria-label="手順">
+                {steps.map((st, k) => (
+                  <li key={st.key} className={run.done[st.key] ? 'done' : k === si ? 'cur' : ''}>
+                    {run.done[st.key] ? '✓' : k + 1} {st.label}
+                  </li>
+                ))}
+              </ol>
+              {extra.length > 0 && (
+                <p className="k-warn">
+                  この懸賞は{extra.map((n) => EXTRA_LABEL[n]).join('・')}も条件です。
+                  <a className="k-link" href={xp.url} target="_blank" rel="noopener noreferrer">
+                    投稿を開く
+                  </a>
+                </p>
+              )}
+              {next ? (
+                <a
+                  className="k-btn primary k-big"
+                  href={next.href}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  onClick={() => {
+                    const done = { ...run.done, [next.key]: true }
+                    if (si === steps.length - 1 && extra.length === 0) {
+                      // 最後の手順：開いたら自動で応募済みにして次へ
+                      setTimeout(() => finish('applied'), 300)
+                    } else setRun({ ...run, done })
+                  }}
+                >
+                  {next.label}
                 </a>
-              </p>
-              <div className="k-actions">
-                <button className="k-btn primary" onClick={() => finish('applied')}>
+              ) : (
+                <button className="k-btn primary k-big" onClick={() => finish('applied')}>
                   応募済みにして次へ
                 </button>
+              )}
+              <div className="k-actions">
                 <button className="k-btn" onClick={() => finish('hidden')}>
-                  スキップ
+                  この懸賞はスキップ
                 </button>
               </div>
             </div>

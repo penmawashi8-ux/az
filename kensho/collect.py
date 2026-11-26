@@ -238,6 +238,21 @@ def extract_x_post(frag: str) -> str | None:
     return f"https://x.com/{m.group(1)}/status/{m.group(2)}" if m else None
 
 
+def extract_x_needs(text: str) -> list[str]:
+    """Xキャンペーンの参加条件（フォロー・リポストは基本なので、追加条件だけ拾う）"""
+    t = re.sub(r"\s+", "", text)
+    needs = []
+    if re.search(r"いいね", t):
+        needs.append("like")
+    if re.search(r"引用(?:リポスト|ポスト|RT|ツイート)", t):
+        needs.append("quote")
+    if re.search(r"返信|リプライ|コメント(?:して|を|で|欄)", t):
+        needs.append("reply")
+    if re.search(r"ハッシュタグ|#\S+を(?:付け|つけ)", t):
+        needs.append("hashtag")
+    return needs
+
+
 def extract_image(page: str) -> str | None:
     m = re.search(r'<meta[^>]+property="og:image"[^>]+content="([^"]+)"', page) or \
         re.search(r'<meta[^>]+content="([^"]+)"[^>]+property="og:image"', page)
@@ -425,6 +440,7 @@ def analyze(cand: dict, page: str) -> dict | None:
         "prizeShort": "",
         "image": extract_image(page),
         "xPost": extract_x_post(frag),
+        "xNeeds": extract_x_needs(text),
         "methods": extract_methods(full),
         "entryUrl": extract_entry_url(frag),
         "addedAt": dt.datetime.now(JST).isoformat(timespec="seconds"),
@@ -475,7 +491,7 @@ def main() -> int:
 
     # 旧形式（賞品名・画像なし）のアイテムを再解析
     for it in list(items.values()):
-        if "prizeShort" not in it or "xPost" not in it:
+        if "prizeShort" not in it or "xNeeds" not in it:
             cands.setdefault(it["url"], {"source": it["source"], "url": it["url"], "title": it["title"],
                                          "desc": "", "company": it.get("company", ""), "published": it.get("published", "")})
 
