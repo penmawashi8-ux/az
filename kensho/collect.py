@@ -404,7 +404,7 @@ EXCLUDE_COUPON_RE = re.compile(r"クーポン|割引券|値引|円引|[%％]\s*O
 
 # 怪しい懸賞：使い捨てによく使われるドメイン、金銭・機微情報の要求、詐欺的な文言
 SUSPICIOUS_TLD_RE = re.compile(r"^https?://[^/]+\.(?:xyz|top|click|icu|buzz|cfd|sbs|rest|monster|work|loan|win|bid|gq|tk|ml|cf|ga|zip|mov)(?:[:/]|$)", re.I)
-SUSPICIOUS_TEXT_RE = re.compile(r"当選確定|必ず当たる|全員当選.{0,10}(送料|手数料)|あなたが選ばれ|おめでとうございます.{0,10}当選|送料(を|は)?(ご)?負担|手数料.{0,10}(お支払|振込|必要)|代引き|クレジットカード(番号|情報)|口座番号|暗証番号|マイナンバー")
+SUSPICIOUS_TEXT_RE = re.compile(r"当選確定|必ず当たる|全員当選.{0,10}(送料|手数料)|あなたが選ばれ|おめでとうございます.{0,10}当選|送料(を|は)?(ご)?負担|手数料.{0,10}(お支払|振込|必要)|代引き|クレジットカード(番号|情報)|口座番号|暗証番号|マイナンバー|協賛企業.{0,15}(提供|連絡|ご案内)|第三者(へ|に)?の?提供に同意")
 
 
 def is_suspicious(item: dict) -> bool:

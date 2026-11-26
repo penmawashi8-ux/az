@@ -48,7 +48,7 @@ const needsReapply = (a) =>
 const NO_DUP = /(重複|複数回|二重|同一人物|同一の方)[^。]{0,25}(応募|エントリー)?[^。]{0,25}(無効|禁止|不可|できません|お断り|認め|対象外|取り消)|(お?一人様?|おひとり様?|1人|１人|お一人)\s*(につき)?\s*(1|１|一)\s*(回|口)(限り|まで|のみ)?/
 
 // ロボットの版。上げると「フォームが見つからない」等でスキップした懸賞に再挑戦する
-const BOT_VERSION = 7
+const BOT_VERSION = 8
 const RETRYABLE = /フォームが見つからない|入力欄が個人情報フォームでない|必須項目が埋められない|クイズに答えられない/
 const ENTRY_LINK = /応募フォーム|応募する|応募はこちら|ご応募はこちら|応募ページ|エントリー|参加する|アンケートに(回答|答え)|アンケートはこちら|今すぐ応募|応募画面|フォームへ|応募へ|^\s*応募\s*$|ENTRY|Entry|APPLY|Apply|応募受付|応募ボタン|プレゼントに応募|キャンペーンに参加/
 const ENTRY_NG = /応募要項|応募規約|応募方法|応募資格|応募条件|注意事項|当選発表|よくある|FAQ|プライバシー/
@@ -200,11 +200,15 @@ function mask(t) {
 const UNFILLABLE = /予定日|お子様|子ども|子供|学年|学校名|会員番号|会員ID|お客様番号|店舗|店名|シリアル|コード|レシート|購入日|購入店|expected|due_?date|member_?(no|id)|shop|store|serial|receipt|child|kids/i
 
 const SCAM_TEXT = /当選確定|必ず当たる|あなたが選ばれ|おめでとうございます[^。]{0,10}当選|送料(を|は)?(ご)?負担|手数料[^。]{0,10}(お支払|振込|必要)|代引き|事務手数料/
+// 個人情報が協賛企業・第三者に渡り、営業連絡が来るタイプ（リード獲得型）の懸賞
+const LEADGEN = /第三者(へ|に)?の?提供に同意|協賛企業[^。]{0,15}(提供|連絡|ご案内|お知らせ)|提携企業[^。]{0,15}(提供|連絡|ご案内)|スポンサー企業[^。]{0,15}(提供|連絡)/
 const SENSITIVE_FIELD = /card|cvv|cvc|security.?code|有効期限|カード番号|口座|bank|account.?number|暗証|pin\b|マイナンバー|my.?number|個人番号|password|パスワード/i
 async function checkRisk(p, frame, text) {
   const url = frame.url()
   if (!url.startsWith('https://') && !/^http:\/\/(localhost|127\.0\.0\.1)[:/]/.test(url)) return '暗号化されていないページ' // localhost はテスト用
   if (SCAM_TEXT.test(text)) return '金銭要求・詐欺的な文言'
+  const formText = await frame.evaluate(() => document.body?.innerText || '').catch(() => '')
+  if (LEADGEN.test(`${text}\n${formText}`)) return '個人情報が協賛企業に提供され営業連絡が来るタイプ'
   const sens = await frame
     .evaluate((src) => {
       const re = new RegExp(src, 'i')
