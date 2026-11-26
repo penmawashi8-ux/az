@@ -40,7 +40,12 @@ const filler = fs.readFileSync(path.join(DIR, 'filler.js'), 'utf8').replace(/^\s
 const data = JSON.parse(fs.readFileSync(DATA, 'utf8'))
 const applied = fs.existsSync(APPLIED) ? JSON.parse(fs.readFileSync(APPLIED, 'utf8')) : {}
 
-const ENTRY_LINK = /応募フォーム|応募する|応募はこちら|ご応募はこちら|応募ページ|エントリー|参加する|アンケートに(回答|答え)|今すぐ応募|応募画面|フォームへ|応募へ/
+// ロボットの版。上げると「フォームが見つからない」等でスキップした懸賞に再挑戦する
+const BOT_VERSION = 2
+const RETRYABLE = /フォームが見つからない|入力欄が個人情報フォームでない/
+const ENTRY_LINK = /応募フォーム|応募する|応募はこちら|ご応募はこちら|応募ページ|エントリー|参加する|アンケートに(回答|答え)|アンケートはこちら|今すぐ応募|応募画面|フォームへ|応募へ|^\s*応募\s*$|ENTRY|Entry|APPLY|Apply|応募受付|応募ボタン|プレゼントに応募|キャンペーンに参加/
+const ENTRY_NG = /応募要項|応募規約|応募方法|応募資格|応募条件|注意事項|当選発表|よくある|FAQ|プライバシー/
+const FORM_HREF = /forms\.gle\/|docs\.google\.com\/forms|form\.run\/|formzu|questant\.jp|forms\.office\.com|tayori\.com\/form|formmailer|cuenote|\/(entry|apply|enquete|questionnaire|form)(\/|\.|\?|$)/i
 const NO_AUTO = /(自動|機械的|プログラム|ツール|ボット|bot|スクリプト|代行)[^。]{0,30}(応募|エントリー|参加)[^。]{0,30}(禁止|無効|お断り|認め|できません|対象外|取り消)/i
 const DONE = /応募(が|を)?(完了|受け付け|受付)|受け?付けました|受付(が|を)?完了|送信(が|を)?完了|ご応募(いただき|頂き)|ありがとうございました|ありがとうございます|エントリー(が|を)?完了|thank\s*you/i
 const NG_BTN = /戻る|修正|キャンセル|リセット|クリア|ログイン|検索|シェア|閉じる|会員登録|新規登録/
@@ -48,7 +53,14 @@ const SUBMIT_BTN = /応募する|送信する|この内容で|^送信$|^応募$|
 const NEXT_BTN = /確認|次へ|進む|submit/i
 
 const targets = data.items
-  .filter((it) => it.webOpen && it.entryUrl && (!applied[it.id] || (applied[it.id].status === 'fail' && (applied[it.id].tries || 1) < 3)))
+  .filter((it) => {
+    if (!it.webOpen || !it.entryUrl) return false
+    const a = applied[it.id]
+    if (!a) return true
+    if (a.status === 'fail') return (a.tries || 1) < 3 || (a.v || 1) < BOT_VERSION
+    if (a.status === 'skip') return RETRYABLE.test(a.reason || '') && (a.v || 1) < BOT_VERSION
+    return false
+  })
   .sort((a, b) => b.score - a.score)
   .slice(0, MAX)
 
@@ -62,6 +74,7 @@ const ctx = await browser.newContext({
   viewport: { width: 1280, height: 900 },
 })
 ctx.setDefaultTimeout(15000)
+ctx.setDefaultNavigationTimeout(30000)
 
 /** 入力欄が一番多いフレーム（Googleフォーム等の埋め込みにも対応） */
 async function bestFrame(page) {
@@ -92,13 +105,36 @@ async function findForm(page) {
     const { frame, inputs } = await bestFrame(page)
     if (frame && inputs >= 2) return { page, frame }
     if (hop === 2) break
-    const link = await page.evaluate((src) => {
-      const re = new RegExp(src)
-      const els = Array.from(document.querySelectorAll('a[href], button'))
-      const el = els.find((e) => re.test((e.textContent || e.getAttribute('aria-label') || '').trim()) && (e.offsetWidth || e.offsetHeight))
-      if (!el) return null
-      return el.tagName === 'A' ? { href: el.href } : { click: true, idx: els.indexOf(el) }
-    }, ENTRY_LINK.source)
+    // 遅延読み込みの部分も出すため最後までスクロール
+    await page.evaluate(async () => {
+      for (let y = 0; y < document.body.scrollHeight; y += 800) {
+        window.scrollTo(0, y)
+        await new Promise((r) => setTimeout(r, 120))
+      }
+    }).catch(() => {})
+    const link = await page.evaluate(
+      ([src, ngSrc, formSrc]) => {
+        const re = new RegExp(src)
+        const ng = new RegExp(ngSrc)
+        const formRe = new RegExp(formSrc, 'i')
+        const here = location.href.split('#')[0]
+        const els = Array.from(document.querySelectorAll('a[href], button, [role=button], input[type=button], input[type=image]'))
+        const label = (e) =>
+          ((e.textContent || '') + ' ' + (e.getAttribute('aria-label') || '') + ' ' + (e.value || '') + ' ' +
+            Array.from(e.querySelectorAll('img')).map((i) => i.alt).join(' ')).replace(/\s+/g, ' ').trim()
+        const ok = (e) => {
+          if (e.tagName === 'A' && (!e.href || e.href.split('#')[0] === here)) return false
+          const t = label(e)
+          return t.length <= 40 && re.test(t) && !ng.test(t)
+        }
+        // 1) フォームサービスへの直リンク 2) 応募ボタン（表示中を優先）
+        let el = els.find((e) => e.tagName === 'A' && formRe.test(e.href) && e.href.split('#')[0] !== here)
+        if (!el) el = els.find((e) => ok(e) && (e.offsetWidth || e.offsetHeight)) || els.find((e) => ok(e) && e.tagName === 'A')
+        if (!el) return null
+        return el.tagName === 'A' ? { href: el.href } : { click: true, idx: els.indexOf(el) }
+      },
+      [ENTRY_LINK.source, ENTRY_NG.source, FORM_HREF.source],
+    )
     if (!link) break
     if (link.href) {
       if (/^(mailto|tel|javascript):/.test(link.href)) break
@@ -106,7 +142,7 @@ async function findForm(page) {
       await page.goto(link.href, { waitUntil: 'domcontentloaded' })
     } else {
       const popup = page.context().waitForEvent('page', { timeout: 5000 }).catch(() => null)
-      await page.locator('a[href], button').nth(link.idx).click()
+      await page.locator('a[href], button, [role=button], input[type=button], input[type=image]').nth(link.idx).click()
       const p2 = await popup
       if (p2) {
         await p2.waitForLoadState('domcontentloaded').catch(() => {})
@@ -145,7 +181,19 @@ async function applyOne(it) {
     await page.waitForLoadState('networkidle', { timeout: 8000 }).catch(() => {})
     const found = await findForm(page)
     if (found.sns) return { status: 'skip', reason: 'SNS応募' }
-    if (!found.frame) return { status: 'skip', reason: 'フォームが見つからない' }
+    if (!found.frame) {
+      // 改善用の手がかり（ボタン/リンクの文言とURLのパスだけ。個人情報は含まない）
+      const hints = await found.page
+        .evaluate(() =>
+          Array.from(document.querySelectorAll('a[href], button'))
+            .map((e) => ({ t: (e.textContent || Array.from(e.querySelectorAll('img')).map((i) => i.alt).join(' ')).replace(/\s+/g, ' ').trim().slice(0, 24), h: e.href ? new URL(e.href).pathname.slice(0, 40) : 'button' }))
+            .filter((x) => /応募|キャンペーン|参加|アンケート|フォーム|entry|form|apply|こちら/i.test(x.t + x.h))
+            .slice(0, 8),
+        )
+        .catch(() => [])
+      console.log('   hints', JSON.stringify(hints))
+      return { status: 'skip', reason: 'フォームが見つからない' }
+    }
     let { page: p, frame } = found
     // 問い合わせフォーム・検索フォーム等に誤って送信しない
     const where = `${frame.url()} ${await p.title().catch(() => '')}`
@@ -203,6 +251,7 @@ for (const it of targets) {
       ...res,
       host,
       at: new Date().toISOString(),
+      v: BOT_VERSION,
       tries: (applied[it.id]?.tries || 0) + 1,
       // 履歴表示用（締切後に一覧から消えても残るように）
       title: it.title,
