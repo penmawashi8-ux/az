@@ -126,7 +126,12 @@ function guessFromText(questions, context) {
 }
 
 /** クイズを解いてフォームに反映。戻り値は {asked, answered, via} */
+// ページ全体にクイズ形式の懸賞だと分かる記述がある場合だけクイズとして扱う（普通のアンケートの「Q1」と区別）
+const QUIZ_PAGE = /クイズ|正解(者|した|の方|された)|問題に(答え|回答)|答えを(選|入力|記入)/
+
 export async function solveQuiz(frame, context) {
+  const formText = await frame.evaluate(() => document.body?.innerText || '').catch(() => '')
+  if (!QUIZ_PAGE.test(`${context}\n${formText}`)) return { asked: 0, answered: 0, via: '' }
   const questions = await collectQuiz(frame)
   if (!questions.length) return { asked: 0, answered: 0, via: '' }
   let answers = {}

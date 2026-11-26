@@ -42,6 +42,8 @@ type BotResult = {
   entryUrl?: string
   deadline?: string | null
   image?: string | null
+  reapplied?: string[]
+  reapplyNote?: string
 }
 const BOT_LABEL: Record<string, string> = { applied: '自動応募済み', skip: '自動応募できず', fail: '自動応募に失敗', unknown: '自動応募（完了未確認）' }
 // 送信まで進んだもの（完了画面を確認できなかったものも含む）
@@ -373,7 +375,7 @@ export default function KenshoList() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [data, marks, bot, hidePurchase])
 
-  type Hist = { id: string; status: string; how: '自動' | '手動'; at: string; prize: string; title: string; url: string; deadline?: string | null; image?: string | null; reason?: string; entryUrl?: string }
+  type Hist = { note?: string; id: string; status: string; how: '自動' | '手動'; at: string; prize: string; title: string; url: string; deadline?: string | null; image?: string | null; reason?: string; entryUrl?: string }
   const history: Hist[] = useMemo(() => {
     const out: Hist[] = []
     const byId = new Map((data?.items || []).map((i) => [i.id, i]))
@@ -391,6 +393,7 @@ export default function KenshoList() {
         image: b.image ?? it?.image,
         reason: b.reason,
         entryUrl: b.entryUrl || it?.entryUrl || undefined,
+        note: b.reapplied?.length ? (b.reapplyNote ? `再応募せず：${b.reapplyNote.replace('のため再応募せず', '')}` : '正しいメールで再応募済み') : undefined,
       })
     })
     Object.entries(marks).forEach(([id, m]) => {
@@ -543,6 +546,7 @@ export default function KenshoList() {
                         {h.deadline && <span>締切 {h.deadline.slice(5).replace('-', '/')}{d !== null && d < 0 ? '（終了）' : ''}</span>}
                       </div>
                       {h.status === 'unknown' && <p className="k-bot">送信済み（完了画面は確認できず）</p>}
+                      {h.note && <p className="k-bot">{h.note}</p>}
                       {!OKS.includes(h.status) && (
                         <p className="k-bot k-bot-skip">
                           {BOT_LABEL[h.status]}

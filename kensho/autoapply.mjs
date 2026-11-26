@@ -40,6 +40,12 @@ profile.survey = 'on'
 const filler = fs.readFileSync(path.join(DIR, 'filler.js'), 'utf8').replace(/^\s*\/\/.*$/gm, '').trim().replace(/^;/, '')
 const data = JSON.parse(fs.readFileSync(DATA, 'utf8'))
 const applied = fs.existsSync(APPLIED) ? JSON.parse(fs.readFileSync(APPLIED, 'utf8')) : {}
+// 再応募の指示（プロフィール修正時など）。before より前に送信済みのものを1回だけやり直す
+const REAPPLY = fs.existsSync(path.join(DIR, 'reapply.json')) ? JSON.parse(fs.readFileSync(path.join(DIR, 'reapply.json'), 'utf8')) : null
+const needsReapply = (a) =>
+  !!REAPPLY && ['applied', 'unknown'].includes(a.status) && a.at < REAPPLY.before && !(a.reapplied || []).includes(REAPPLY.tag)
+// 規約で重複応募が禁止されている（＝再応募すると無効になりうる）
+const NO_DUP = /(重複|複数回|二重|同一人物|同一の方)[^。]{0,25}(応募|エントリー)?[^。]{0,25}(無効|禁止|不可|できません|お断り|認め|対象外|取り消)|(お?一人様?|おひとり様?|1人|１人|お一人)\s*(につき)?\s*(1|１|一)\s*(回|口)(限り|まで|のみ)?/
 
 // ロボットの版。上げると「フォームが見つからない」等でスキップした懸賞に再挑戦する
 const BOT_VERSION = 3
@@ -58,11 +64,12 @@ const targets = data.items
     if (!it.webOpen || !it.entryUrl) return false
     const a = applied[it.id]
     if (!a) return true
+    if (needsReapply(a)) return true
     if (a.status === 'fail') return (a.tries || 1) < 3 || (a.v || 1) < BOT_VERSION
     if (a.status === 'skip') return RETRYABLE.test(a.reason || '') && (a.v || 1) < BOT_VERSION
     return false
   })
-  .sort((a, b) => b.score - a.score)
+  .sort((a, b) => Number(!!applied[b.id]) - Number(!!applied[a.id]) || b.score - a.score) // 再応募を優先
   .slice(0, MAX)
 
 console.log(`mode=${SUBMIT ? 'SUBMIT' : 'DRY-RUN'} targets=${targets.length} already=${Object.keys(applied).length}`)
@@ -174,7 +181,7 @@ async function clickSubmit(frame) {
   )
 }
 
-async function applyOne(it) {
+async function applyOne(it, reapply = false) {
   const page = await ctx.newPage()
   page.on('dialog', (d) => d.accept().catch(() => {}))
   try {
@@ -203,6 +210,7 @@ async function applyOne(it) {
       return { status: 'skip', reason: '応募フォームではない（問い合わせ/会員登録等）' }
     const text = await pageText(p)
     if (NO_AUTO.test(text)) return { status: 'skip', reason: '規約で自動応募禁止' }
+    if (reapply && NO_DUP.test(`${landing}\n${text}`)) return { status: 'keep', reason: '規約で重複応募禁止のため再応募せず' }
 
     let quizNote = ''
     for (let round = 0; round < 4; round++) {
@@ -245,7 +253,9 @@ async function applyOne(it) {
 
 const tally = {}
 for (const it of targets) {
-  const res = await applyOne(it)
+  const prev = applied[it.id]
+  const reapply = !!prev && needsReapply(prev)
+  const res = await applyOne(it, reapply)
   const host = (() => {
     try {
       return new URL(it.entryUrl).host
@@ -253,7 +263,18 @@ for (const it of targets) {
       return '?'
     }
   })()
-  console.log(`[${res.status}] ${it.id} ${host} ${res.reason}`)
+  console.log(`[${res.status}]${reapply ? '(再応募)' : ''} ${it.id} ${host} ${res.reason}`)
+  if (reapply) {
+    // 再応募は1回だけ。送信できなかった/しなかった場合も前回の記録は残す
+    const tags = [...(prev.reapplied || []), REAPPLY.tag]
+    if (['applied', 'unknown'].includes(res.status)) {
+      applied[it.id] = { ...prev, ...res, at: new Date().toISOString(), v: BOT_VERSION, reapplied: tags }
+    } else {
+      applied[it.id] = { ...prev, reapplied: tags, reapplyNote: res.reason }
+    }
+    tally[res.status] = (tally[res.status] || 0) + 1
+    continue
+  }
   tally[res.status] = (tally[res.status] || 0) + 1
   // 試運転の結果は記録しない（本番で改めて応募する）。失敗は次回再挑戦せず記録。
   if (res.status !== 'dry-ok')
