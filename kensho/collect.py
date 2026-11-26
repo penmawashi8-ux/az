@@ -364,6 +364,16 @@ def score(item: dict) -> int:
     return int(round(max(0, min(100, s))))
 
 
+# 受け取るだけで済まない賞品は除外：自宅での工事・取付が必要なもの、割引クーポン類
+EXCLUDE_WORK_RE = re.compile(r"工事|取付|取り付け|施工|リフォーム|設置費|交換費")
+EXCLUDE_COUPON_RE = re.compile(r"クーポン|割引券|値引|円引|[%％]\s*OFF|OFF券|優待券|割引")
+
+
+def is_excluded(item: dict) -> bool:
+    prize = item.get("prizeShort", "") + " " + item.get("prize", "")
+    return bool(EXCLUDE_WORK_RE.search(prize + " " + item.get("title", "")) or EXCLUDE_COUPON_RE.search(prize))
+
+
 def analyze(cand: dict, page: str) -> dict | None:
     if cand["source"] == "prtimes":
         i = page.find('id="press-release-body"')
@@ -421,6 +431,8 @@ def analyze(cand: dict, page: str) -> dict | None:
     }
     item["prizeShort"] = extract_prize_short(
         [item["prize"], cand["title"]] + [l for l in lines if re.search(r"プレゼント|当た|賞品|景品", l) and len(l) < 200])
+    if is_excluded(item):
+        return None
     item["score"] = score(item)
     return item
 
@@ -489,7 +501,7 @@ def main() -> int:
             del items[c["url"]]
 
     # スコアは締切接近で変わるので毎回再計算
-    alive = [it for it in items.values() if is_alive(it)]
+    alive = [it for it in items.values() if is_alive(it) and not is_excluded(it)]
     for it in alive:
         it["score"] = score(it)
     alive.sort(key=lambda x: (-x["score"], x.get("deadline") or "9999"))

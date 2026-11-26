@@ -71,6 +71,10 @@ function xPostOf(it: Item): { user: string; id: string; url: string } | null {
   }
   return null
 }
+// 工事・取付が必要な賞品、割引クーポン類は表示しない（収集側でも除外）
+const EXCLUDED = (it: Item) =>
+  /工事|取付|取り付け|施工|リフォーム|設置費|交換費/.test(`${it.prizeShort || ''} ${it.prize} ${it.title}`) ||
+  /クーポン|割引券|値引|円引|[%％]\s*OFF|OFF券|優待券|割引/.test(`${it.prizeShort || ''} ${it.prize}`)
 const isX = (it: Item) => it.methods.includes('x') && !!xPostOf(it)
 
 function daysLeft(deadline: string | null): number | null {
@@ -246,7 +250,40 @@ function buildBookmarklet(p: Record<string, string>): string {
         }
       })
     }
-    alert('懸賞オートフィル: 個人情報' + n + '項目' + (survey ? '・アンケート' + q + '問' : '') + 'を入力しました。\n同意チェックと内容を確認して送信してください。')
+    const summary = '個人情報' + n + '項目' + (survey ? '・アンケート' + q + '問' : '')
+    if (P.autosubmit !== 'on') {
+      alert('懸賞オートフィル: ' + summary + 'を入力しました。\n同意チェックと内容を確認して送信してください。')
+      return
+    }
+    // ---- 送信まで自動（設定でオンにした場合のみ）
+    // CAPTCHAがあるページは人が解く必要があるので止める
+    if (document.querySelector('iframe[src*="recaptcha"], iframe[src*="hcaptcha"], iframe[src*="turnstile"], .g-recaptcha, .h-captcha, .cf-turnstile')) {
+      alert('懸賞オートフィル: ' + summary + 'を入力しました。\n画像認証があるので、認証を済ませて送信してください。')
+      return
+    }
+    // 応募規約への同意（メルマガ等の配信希望には触れない）
+    document.querySelectorAll<HTMLInputElement>('input[type=checkbox]').forEach((c) => {
+      const t = labelOf(c).slice(0, 60) + ' ' + c.value
+      if (!c.checked && /同意|規約|ポリシー|個人情報の取り?扱/.test(t) && !/メルマガ|メールマガジン|配信|ニュース|案内/.test(t)) c.click()
+    })
+    document.querySelectorAll<HTMLElement>('[role=checkbox][aria-checked=false]').forEach((c) => {
+      const t = (c.getAttribute('aria-label') || c.textContent || '').slice(0, 60)
+      if (/同意|規約|ポリシー/.test(t) && !/メルマガ|配信|案内/.test(t)) c.click()
+    })
+    const btns = Array.from(document.querySelectorAll<HTMLElement>('button, input[type=submit], input[type=image], a[role=button], [role=button]'))
+      .filter((b) => (b as HTMLElement).offsetParent !== null && !(b as HTMLButtonElement).disabled)
+    const txt = (b: HTMLElement) => ((b as HTMLInputElement).value || b.getAttribute('aria-label') || b.textContent || '').trim()
+    const NG = /戻る|修正|キャンセル|リセット|クリア|ログイン|検索|シェア|閉じる/
+    const btn =
+      btns.find((b) => /応募する|送信する|この内容で|^送信$|^応募$|確定|エントリー/.test(txt(b)) && !NG.test(txt(b))) ||
+      btns.find((b) => /確認|次へ|進む|submit/i.test(txt(b)) && !NG.test(txt(b))) ||
+      btns.find((b) => (b as HTMLInputElement).type === 'submit' && !NG.test(txt(b)))
+    if (!btn) {
+      alert('懸賞オートフィル: ' + summary + 'を入力しました。\n送信ボタンが見つからないので、手動で送信してください。')
+      return
+    }
+    setTimeout(() => btn.click(), 400)
+
   }
   const src = `(${fn.toString()})(${JSON.stringify(p)})`
   return 'javascript:' + encodeURIComponent(src)
@@ -291,7 +328,7 @@ export default function KenshoList() {
 
   const items = useMemo(() => {
     if (!data) return []
-    let xs = data.items.filter((it) => {
+    let xs = data.items.filter((it) => !EXCLUDED(it)).filter((it) => {
       const m = marks[it.id]
       const visible = !(hidePurchase && it.methods.includes('purchase'))
       if (tab === 'todo') return !m && visible && !isX(it)
@@ -304,7 +341,7 @@ export default function KenshoList() {
 
   const counts = useMemo(() => {
     const c = { todo: 0, x: 0, applied: 0, hidden: 0 }
-    data?.items.forEach((it) => {
+    data?.items.filter((it) => !EXCLUDED(it)).forEach((it) => {
       const m = marks[it.id]
       if (m) c[m]++
       else if (!(hidePurchase && it.methods.includes('purchase'))) c[isX(it) ? 'x' : 'todo']++
@@ -376,6 +413,18 @@ export default function KenshoList() {
               }}
             />{' '}
             アンケートにも自動で回答する（選択式は好意的な選択肢、自由記述は上の文）
+          </label>
+          <label className="k-check">
+            <input
+              type="checkbox"
+              checked={profile.autosubmit === 'on'}
+              onChange={(e) => {
+                const next = { ...profile, autosubmit: e.target.checked ? 'on' : 'off' }
+                setProfile(next)
+                writeLS(PROFILE_KEY, next)
+              }}
+            />{' '}
+            <b>送信まで自動</b>：応募規約への同意にチェックして送信ボタンまで押す（確認画面がある場合はもう一度ブックマークを押す。画像認証があるページでは止まる。メルマガ購読には触れない）
           </label>
           <p className="k-note">
             下のリンクをブックマークに登録（PCはドラッグ、スマホは長押し→コピーしてブックマークのURLに貼り付け）。応募フォームでそのブックマークを開くと入力されます。
