@@ -260,10 +260,15 @@ def extract_x_needs(text: str) -> list[str]:
     needs = []
     if re.search(r"いいね", t):
         needs.append("like")
-    if re.search(r"引用(?:リポスト|ポスト|RT|ツイート)", t):
+    quote = bool(re.search(r"引用(?:リポスト|ポスト|RT|ツイート)", t))
+    if quote:
         needs.append("quote")
-    if re.search(r"返信|リプライ|コメント(?:して|を|で|欄)", t):
+    # 「コメントを入れて引用ポスト」のコメントは引用の中身なので、返信とは数えない
+    if re.search(r"返信|リプライ|コメント欄", t) or (not quote and re.search(r"コメント(?:して|を|で)", t)):
         needs.append("reply")
+    # 通常のリポスト（引用リポストとは別）が条件か
+    if re.search(r"(?<!引用)(?:リポスト|リツイート|RT)(?!キャンペーン)", t):
+        needs.append("repost")
     if re.search(r"ハッシュタグ|#\S+を(?:付け|つけ)", t):
         needs.append("hashtag")
     return needs
@@ -280,6 +285,21 @@ def extract_x_tags(text: str) -> list[str]:
         if t not in tags and not re.fullmatch(r"#(PR|pr|拡散希望|プレゼント企画)", t):
             tags.append(t)
     return tags[:5]
+
+
+def extract_x_phrases(text: str) -> list[str]:
+    """投稿に入れるよう指定された文言（例：「これからもローソンプリント」＆コメントを入れて引用ポスト）"""
+    out = []
+    for sent in re.split(r"[\n。]|[①-⑩]", norm(text)):
+        if not re.search(r"引用|返信|リプライ|コメント|投稿|ポスト|入れて|付けて|つけて|添えて", sent):
+            continue
+        for m in re.finditer(r"[「『]([^」』]{2,40})[」』]", sent):
+            ph = m.group(1).strip()
+            if ph.startswith(("#", "＃")) or re.search(r"キャンペーン$|プレゼント$", ph):
+                continue
+            if ph not in out:
+                out.append(ph)
+    return out[:3]
 
 
 def extract_x_prompt(text: str) -> str:
@@ -510,6 +530,7 @@ def analyze_koubo(cand: dict, page: str) -> dict | None:
         "xNeeds": extract_x_needs(how) if site and "x.com" in site else [],
         "xTags": extract_x_tags(how + " " + body) if site and "x.com" in site else [],
         "xPrompt": extract_x_prompt(how) if site and "x.com" in site else "",
+        "xPhrases": extract_x_phrases(how) if site and "x.com" in site else [],
         "methods": methods,
         "entryUrl": site,
         "howTo": how[:300],
@@ -575,6 +596,7 @@ def analyze_chance(cand: dict, page: str) -> dict | None:
         "xNeeds": [],
         "xTags": [],
         "xPrompt": "",
+        "xPhrases": [],
         "methods": methods,
         # 応募ページへの転送リンク（本人がタップする用。ロボットは辿らない）
         "entryUrl": f"https://www.chance.com/jump.srv?id={cid}",
@@ -646,6 +668,7 @@ def analyze(cand: dict, page: str) -> dict | None:
         "xNeeds": extract_x_needs(text),
         "xTags": extract_x_tags(text) if extract_x_post(frag) else [],
         "xPrompt": extract_x_prompt(text) if extract_x_post(frag) else "",
+        "xPhrases": extract_x_phrases(text) if extract_x_post(frag) else [],
         "methods": extract_methods(full),
         "entryUrl": extract_entry_url(frag),
         "webOpen": False,
@@ -701,7 +724,7 @@ def main() -> int:
 
     # 旧形式（賞品名・画像なし）のアイテムを再解析
     for it in list(items.values()):
-        if "xTags" not in it or (it["source"] not in ("koubo", "chance") and ("prizeShort" not in it or "xNeeds" not in it or "webOpen" not in it)):
+        if "xPhrases" not in it or (it["source"] not in ("koubo", "chance") and ("prizeShort" not in it or "xNeeds" not in it or "webOpen" not in it)):
             cands.setdefault(it["url"], {"source": it["source"], "url": it["url"], "title": it["title"],
                                          "desc": "", "company": it.get("company", ""), "published": it.get("published", "")})
 

@@ -20,6 +20,7 @@ type Item = {
   xNeeds?: string[]
   xTags?: string[]
   xPrompt?: string
+  xPhrases?: string[]
   webOpen?: boolean
   methods: string[]
   entryUrl: string | null
@@ -105,8 +106,10 @@ function defaultPostText(it: Item): string {
   let body = '素敵なキャンペーンありがとうございます！応募します。当たったら嬉しいです。'
   if (/欲しい|どれ|希望/.test(p) && prize) body = `${prize}が欲しいです！ぜひ当たりますように。`
   else if (/感想|好き|楽しみ|応援/.test(p)) body = 'いつも楽しみにしています！これからも応援しています。'
+  // 指定された文言（例：「これからもローソンプリント」）は必ず先頭に入れる
+  const phrases = (it.xPhrases || []).join('\n')
   const tags = (it.xTags || []).join(' ')
-  return tags ? `${body}\n${tags}` : body
+  return [phrases, body, tags].filter(Boolean).join('\n')
 }
 
 /**
@@ -732,17 +735,20 @@ export default function KenshoList() {
         // 押す順番：フォロー → リポスト →（条件にあれば）いいね。最後を押すと自動で応募済みにして次の懸賞へ
         const needs = cur.xNeeds
         const wantLike = !needs || needs.includes('like')
+        const wantQuote = !!needs?.includes('quote')
+        // 引用ポストだけが条件の懸賞では通常のリポストはしない（新しいデータでは repost の有無で判断）
+        const wantRepost = !needs || !wantQuote || needs.includes('repost') || cur.xPhrases === undefined
         const steps: { key: string; label: string; href: string }[] = oneTrip
-          ? [{ key: 'post', label: `投稿を開いてフォロー・リポスト${wantLike ? '・いいね' : ''}`, href: xp.url }]
+          ? [{ key: 'post', label: `投稿を開いてフォロー${wantRepost ? '・リポスト' : ''}${wantLike ? '・いいね' : ''}`, href: xp.url }]
           : [
               { key: 'follow', label: `@${xp.user} をフォロー`, href: `https://x.com/intent/follow?screen_name=${xp.user}` },
-              { key: 'rt', label: 'リポスト', href: `https://x.com/intent/retweet?tweet_id=${xp.id}` },
+              ...(wantRepost ? [{ key: 'rt', label: 'リポスト', href: `https://x.com/intent/retweet?tweet_id=${xp.id}` }] : []),
             ]
         if (!oneTrip && wantLike) steps.push({ key: 'like', label: 'いいね', href: `https://x.com/intent/like?tweet_id=${xp.id}` })
         // 返信・引用・ハッシュタグ投稿が条件なら、文面入りの投稿画面を開く手順を足す
         const postText = run.text ?? defaultPostText(cur)
         const enc = encodeURIComponent
-        if (needs?.includes('reply'))
+        if (needs?.includes('reply') && !wantQuote)
           steps.push({ key: 'reply', label: '返信する', href: `https://x.com/intent/post?in_reply_to=${xp.id}&text=${enc(postText)}` })
         if (needs?.includes('quote'))
           steps.push({ key: 'quote', label: '引用ポストする', href: `https://x.com/intent/post?text=${enc(postText)}&url=${enc(xp.url)}` })
