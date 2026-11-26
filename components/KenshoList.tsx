@@ -18,6 +18,7 @@ type Item = {
   image?: string | null
   xPost?: string | null
   xNeeds?: string[]
+  webOpen?: boolean
   methods: string[]
   entryUrl: string | null
   score: number
@@ -30,6 +31,9 @@ type Tab = 'todo' | 'x' | 'applied' | 'hidden'
 
 // GitHub Actions が毎時更新する kensho-data ブランチ
 const DATA_URL = 'https://raw.githubusercontent.com/penmawashi8-ux/az/kensho-data/data.json'
+const APPLIED_URL = 'https://raw.githubusercontent.com/penmawashi8-ux/az/kensho-data/applied.json'
+type BotResult = { status: 'applied' | 'skip' | 'fail' | 'unknown'; reason: string; at: string }
+const BOT_LABEL: Record<string, string> = { applied: '自動応募済み', skip: '自動応募できず', fail: '自動応募に失敗', unknown: '自動応募（完了未確認）' }
 const MARKS_KEY = 'kensho.marks.v1'
 const PREFS_KEY = 'kensho.prefs.v1'
 const PROFILE_KEY = 'kensho.profile.v1'
@@ -292,6 +296,7 @@ function buildBookmarklet(p: Record<string, string>): string {
 
 export default function KenshoList() {
   const [data, setData] = useState<Data | null>(null)
+  const [bot, setBot] = useState<Record<string, BotResult>>({})
   const [error, setError] = useState<string | null>(null)
   const [marks, setMarks] = useState<Record<string, Mark>>({})
   const [tab, setTab] = useState<Tab>('todo')
@@ -314,9 +319,12 @@ export default function KenshoList() {
       .catch(() => get((process.env.NEXT_PUBLIC_BASE_PATH || '') + '/kensho/data.json'))
       .then(setData)
       .catch((e) => setError(String(e)))
+    get(APPLIED_URL).then(setBot).catch(() => {})
   }, [])
 
   useEffect(() => writeLS(PREFS_KEY, { hidePurchase, sort }), [hidePurchase, sort])
+
+  const markOf = (id: string): Mark | undefined => marks[id] || (bot[id]?.status === 'applied' ? 'applied' : undefined)
 
   const mark = (id: string, m: Mark | undefined, withUndo = true) => {
     const next = { ...marks }
@@ -330,7 +338,7 @@ export default function KenshoList() {
   const items = useMemo(() => {
     if (!data) return []
     let xs = data.items.filter((it) => !EXCLUDED(it)).filter((it) => {
-      const m = marks[it.id]
+      const m = markOf(it.id)
       const visible = !(hidePurchase && it.methods.includes('purchase'))
       if (tab === 'todo') return !m && visible && !isX(it)
       if (tab === 'x') return !m && visible && isX(it)
@@ -338,17 +346,19 @@ export default function KenshoList() {
     })
     if (sort === 'deadline') xs = [...xs].sort((a, b) => (a.deadline || '9999').localeCompare(b.deadline || '9999'))
     return xs
-  }, [data, marks, tab, hidePurchase, sort])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [data, marks, bot, tab, hidePurchase, sort])
 
   const counts = useMemo(() => {
     const c = { todo: 0, x: 0, applied: 0, hidden: 0 }
     data?.items.filter((it) => !EXCLUDED(it)).forEach((it) => {
-      const m = marks[it.id]
+      const m = markOf(it.id)
       if (m) c[m]++
       else if (!(hidePurchase && it.methods.includes('purchase'))) c[isX(it) ? 'x' : 'todo']++
     })
     return c
-  }, [data, marks, hidePurchase])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [data, marks, bot, hidePurchase])
 
   const bookmarklet = useMemo(() => buildBookmarklet(profile), [profile])
   const labels = data?.methodLabels || {}
@@ -430,6 +440,12 @@ export default function KenshoList() {
           <p className="k-note">
             下のリンクをブックマークに登録（PCはドラッグ、スマホは長押し→コピーしてブックマークのURLに貼り付け）。応募フォームでそのブックマークを開くと入力されます。
           </p>
+          <p className="k-note">
+            <b>完全自動応募</b>を使うには、下のボタンで設定をコピーし、GitHubのリポジトリ → Settings → Secrets and variables → Actions → New repository secret で、名前を <code>KENSHO_PROFILE</code> にして貼り付けてください（暗号化して保存され、公開されません）。
+          </p>
+          <button className="k-btn k-copy" onClick={() => navigator.clipboard?.writeText(JSON.stringify(profile))}>
+            自動応募用の設定をコピー
+          </button>
           <a className="k-bm" href={bookmarklet} onClick={(e) => e.preventDefault()}>
             懸賞オートフィル
           </a>
@@ -484,6 +500,14 @@ export default function KenshoList() {
                 ))}
                 {it.company && <span className="k-company">{it.company}</span>}
               </div>
+              {bot[it.id] ? (
+                <p className={`k-bot k-bot-${bot[it.id].status}`}>
+                  {BOT_LABEL[bot[it.id].status]}
+                  {bot[it.id].reason ? `：${bot[it.id].reason}` : ''}
+                </p>
+              ) : it.webOpen ? (
+                <p className="k-bot">自動応募の対象（次の実行で応募します）</p>
+              ) : null}
               <div className="k-actions">
                 {tab === 'x' ? (
                   <>

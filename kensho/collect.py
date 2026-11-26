@@ -27,7 +27,7 @@ NEW_PATH = os.environ.get("KENSHO_NEW") or os.path.join(ROOT, "kensho", ".new_it
 JST = dt.timezone(dt.timedelta(hours=9))
 UA = "Mozilla/5.0 (compatible; kensho-collector/1.0; personal RSS reader)"
 FETCH_DELAY = 1.5          # 詳細ページ取得の間隔（秒）
-MAX_DETAIL_FETCH = int(os.environ.get("KENSHO_MAX_FETCH", "80"))
+MAX_DETAIL_FETCH = int(os.environ.get("KENSHO_MAX_FETCH", "100"))
 NO_DEADLINE_TTL_DAYS = 30  # 締切不明のものは公開から30日で消す
 
 FEEDS = [
@@ -35,6 +35,7 @@ FEEDS = [
     ("atpress", "https://www.atpress.ne.jp/rss/index.rdf"),
 ]
 KEYWORD_PAGES = [
+    ("koubo", "https://koubo.jp/category/present/all"),  # 公募ガイド：Web応募フォームの懸賞が多い
     ("prtimes", "https://prtimes.jp/topics/keywords/" + urllib.parse.quote("プレゼントキャンペーン")),
     ("prtimes", "https://prtimes.jp/topics/keywords/" + urllib.parse.quote("キャンペーン")),
 ]
@@ -118,6 +119,10 @@ def parse_rss(source: str, xml: str) -> list[dict]:
 
 
 def parse_keyword_page(source: str, page: str) -> list[dict]:
+    if source == "koubo":
+        ids = list(dict.fromkeys(re.findall(r'href="/contest/(\d+)"', page)))
+        return [{"source": "koubo", "url": f"https://koubo.jp/contest/{i}", "title": "", "desc": "",
+                 "company": "", "published": ""} for i in ids]
     urls = sorted(set(re.findall(r'/main/html/rd/p/[0-9.]+\.html', page)))
     return [{"source": source, "url": "https://prtimes.jp" + u, "title": "", "desc": "",
              "company": "", "published": ""} for u in urls]
@@ -389,7 +394,90 @@ def is_excluded(item: dict) -> bool:
     return bool(EXCLUDE_WORK_RE.search(prize + " " + item.get("title", "")) or EXCLUDE_COUPON_RE.search(prize))
 
 
+KOUBO_LABELS = ["締切日", "主催者", "賞", "応募資格", "主催者サイト", "募集内容", "応募方法/応募先",
+                "応募時の会員登録", "募集期間", "諸権利", "出典:"]
+SNS_HOST_RE = re.compile(r"^https?://(?:www\.|mobile\.)?(?:x|twitter|instagram|tiktok|facebook|youtube|line)\.(?:com|me)/|^https?://lin\.ee/")
+WEB_ENTRY_RE = re.compile(r"応募フォーム|フォーム|WEB|Web|ウェブ|特設サイト|キャンペーンサイト|アンケート|専用ページ|サイト(?:から|より|内)")
+
+
+def analyze_koubo(cand: dict, page: str) -> dict | None:
+    """koubo.jp の懸賞詳細ページ（項目が構造化されている）"""
+    lines = html_to_lines(page)
+    try:
+        st = lines.index("締切日")
+    except ValueError:
+        return None
+    f: dict[str, list[str]] = {}
+    cur = None
+    for l in lines[st:]:
+        if l in KOUBO_LABELS:
+            cur = l.rstrip("：")
+        elif l.startswith("コンテストの趣旨") or l == "こんな公募もいかがですか?":
+            break
+        elif cur:
+            f.setdefault(cur, []).append(l)
+    title = lines[st - 3] if st >= 3 else cand["title"]
+    pub = next((l for l in lines[st - 3: st] if re.match(r"\d{4}/\d{1,2}/\d{1,2} 掲載", l)), "")
+    published = ""
+    if pub:
+        y, m, d = re.findall(r"\d+", pub)[:3]
+        published = f"{int(y):04d}-{int(m):02d}-{int(d):02d}"
+    base = dt.date.fromisoformat(published) if published else TODAY
+    ds = find_dates(" ".join(f.get("締切日", [])), base)
+    deadline = ds[-1][1].isoformat() if ds else None
+    if deadline and dt.date.fromisoformat(deadline) < TODAY:
+        return None
+    i = page.find("主催者サイト")
+    m = re.search(r'href="(https?://(?!koubo\.jp)[^"]+)"', page[i:]) if i >= 0 else None
+    site = re.sub(r"#\d+$", "", html.unescape(m.group(1))) if m else None
+    how = " ".join(f.get("応募方法/応募先", []))
+    body = " ".join(f.get("募集内容", []))
+    prize_lines = f.get("賞", [])
+    full = f"{title}\n{how}\n{body}\n" + "\n".join(prize_lines)
+    methods = extract_methods(full)
+    sns_only = bool(site and SNS_HOST_RE.match(site))
+    if not sns_only and WEB_ENTRY_RE.search(how) and "form" not in methods:
+        methods.append("form")
+    if site and re.match(r"^https?://(?:www\.)?(?:x|twitter)\.com/", site) and "x" not in methods:
+        methods.insert(0, "x")
+    if site and "instagram.com" in site and "instagram" not in methods:
+        methods.insert(0, "instagram")
+    member = " ".join(f.get("応募時の会員登録", []))
+    prize_short = re.sub(r"^[【\[]|[】\]]$", "", prize_lines[0]).strip() if prize_lines else ""
+    if len(prize_short) > 40:
+        prize_short = extract_prize_short(prize_lines + [body, title]) or prize_short[:40] + "…"
+    item = {
+        "id": re.sub(r"\W+", "_", cand["url"].split("//", 1)[-1]),
+        "source": "koubo",
+        "url": cand["url"],
+        "title": title,
+        "company": " ".join(f.get("主催者", []))[:60],
+        "published": published or TODAY.isoformat(),
+        "deadline": deadline,
+        "winners": extract_winners(full),
+        "value": extract_value(full),
+        "prize": " ".join(prize_lines)[:200],
+        "prizeShort": prize_short,
+        "image": extract_image(page),
+        "xPost": extract_x_post(f'href="{site}"') if site else None,
+        "xNeeds": extract_x_needs(how) if site and "x.com" in site else [],
+        "methods": methods,
+        "entryUrl": site,
+        "howTo": how[:300],
+        # 会員登録不要・Webフォームで応募・購入/郵送/来店なし → 自動応募の対象
+        "webOpen": (member.startswith("不要") and "form" in methods and not sns_only
+                    and not ({"purchase", "hagaki", "visit"} & set(methods))),
+        "addedAt": dt.datetime.now(JST).isoformat(timespec="seconds"),
+    }
+    if is_excluded(item):
+        return None
+    item["score"] = score(item)
+    return item
+
+
 def analyze(cand: dict, page: str) -> dict | None:
+    if cand["source"] == "koubo":
+        return analyze_koubo(cand, page)
     if cand["source"] == "prtimes":
         i = page.find('id="press-release-body"')
         j = page.find('js-press-release-image-list', i)
@@ -491,7 +579,7 @@ def main() -> int:
 
     # 旧形式（賞品名・画像なし）のアイテムを再解析
     for it in list(items.values()):
-        if "prizeShort" not in it or "xNeeds" not in it:
+        if it["source"] != "koubo" and ("prizeShort" not in it or "xNeeds" not in it):
             cands.setdefault(it["url"], {"source": it["source"], "url": it["url"], "title": it["title"],
                                          "desc": "", "company": it.get("company", ""), "published": it.get("published", "")})
 

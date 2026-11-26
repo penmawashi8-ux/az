@@ -94,3 +94,8 @@ body:has(.kensho) { background: var(--k-bg, #f6f7f9); }
 .k-progress li.done { color: var(--k-score); }
 .k-warn { font-size: 13px; color: var(--k-urgent); margin-bottom: 8px; line-height: 1.5; }
 .k-big { display: block; width: 100%; padding: 16px; font-size: 17px; margin-bottom: 8px; }
+.k-bot { font-size: 12px; margin-top: 8px; color: var(--k-muted); }
+.k-bot-applied { color: var(--k-score); font-weight: 600; }
+.k-bot-skip, .k-bot-fail, .k-bot-unknown { color: var(--k-urgent); }
+.k-copy { display: block; width: 100%; margin: 4px 0 12px; }
+.k-note code { background: var(--k-chip); padding: 0 4px; border-radius: 3px; }

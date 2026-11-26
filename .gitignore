@@ -37,3 +37,6 @@ next-env.d.ts
 /kensho/state.json
 /kensho/.new_items.json
 __pycache__/
+/kensho/package.json
+/kensho/package-lock.json
+/kensho/node_modules/
