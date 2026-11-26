@@ -476,10 +476,6 @@ def analyze_koubo(cand: dict, page: str) -> dict | None:
     }
     if is_excluded(item):
         return None
-    eu = item.get("entryUrl") or ""
-    item["webOpen"] = bool(eu and not SNS_HOST_RE.match(eu) and "form" in item["methods"]
-                           and not ({"purchase", "hagaki", "visit"} & set(item["methods"]))
-                           and not re.search(r"会員登録|ログイン|マイページ", text))
     item["score"] = score(item)
     return item
 
@@ -547,6 +543,10 @@ def analyze(cand: dict, page: str) -> dict | None:
         [item["prize"], cand["title"]] + [l for l in lines if re.search(r"プレゼント|当た|賞品|景品", l) and len(l) < 200])
     if is_excluded(item):
         return None
+    eu = item.get("entryUrl") or ""
+    item["webOpen"] = bool(eu and not SNS_HOST_RE.match(eu) and "form" in item["methods"]
+                           and not ({"purchase", "hagaki", "visit"} & set(item["methods"]))
+                           and not re.search(r"会員登録|ログイン|マイページ", text))
     item["score"] = score(item)
     return item
 
