@@ -111,3 +111,4 @@ body:has(.kensho) { background: var(--k-bg, #f6f7f9); }
 .k-how.auto { color: var(--k-score); font-weight: 700; }
 .k-compose { margin: 4px 0 10px; display: flex; flex-direction: column; gap: 4px; }
 .k-posttext { width: 100%; background: var(--k-bg); color: var(--k-text); border: 1px solid var(--k-line); border-radius: 8px; padding: 8px; font-size: 16px; line-height: 1.5; resize: vertical; }
+.k-onetrip { display: flex; gap: 6px; align-items: center; margin-top: 10px; cursor: pointer; }

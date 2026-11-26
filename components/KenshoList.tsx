@@ -109,6 +109,18 @@ function defaultPostText(it: Item): string {
   return tags ? `${body}\n${tags}` : body
 }
 
+/**
+ * Xの画面を開く。PCでは小さな別ウィンドウ（毎回同じ1枚を使い回す）で開くので、
+ * タブが増えず、閉じれば元の画面に戻れる。スマホでは通常どおり新しいタブ/アプリで開く。
+ */
+function openX(url: string) {
+  const narrow = window.matchMedia('(max-width: 700px)').matches
+  const w = narrow
+    ? window.open(url, '_blank', 'noopener')
+    : window.open(url, 'kensho-x', `popup,width=560,height=760,left=${Math.max(0, window.screenX + window.outerWidth - 580)},top=${window.screenY + 40}`)
+  if (!narrow && w) w.focus()
+}
+
 function daysLeft(deadline: string | null): number | null {
   if (!deadline) return null
   const now = new Date()
@@ -364,13 +376,16 @@ export default function KenshoList() {
   const [showProfile, setShowProfile] = useState(false)
   const [undo, setUndo] = useState<{ id: string; prev?: Mark } | null>(null)
   // 連続応募モード（X）：対象IDのキューと現在位置、押したステップ
+  // まとめて1回：フォロー・リポスト・いいねを元の投稿ページ1枚で済ませる（Xとの往復が1回になる）
+  const [oneTrip, setOneTrip] = useState(true)
   const [run, setRun] = useState<{ queue: string[]; i: number; done: Record<string, boolean>; text?: string } | null>(null)
 
   useEffect(() => {
     setMarks(readLS(MARKS_KEY, {}))
-    const prefs = readLS(PREFS_KEY, { hidePurchase: true, sort: 'score' as const })
+    const prefs = readLS(PREFS_KEY, { hidePurchase: true, sort: 'score' as const, oneTrip: true })
     setHidePurchase(prefs.hidePurchase)
     setSort(prefs.sort)
+    if (typeof prefs.oneTrip === 'boolean') setOneTrip(prefs.oneTrip)
     setProfile(readLS(PROFILE_KEY, {}))
     const get = (u: string) => fetch(u, { cache: 'no-store' }).then((r) => (r.ok ? r.json() : Promise.reject(r.status)))
     get(DATA_URL)
@@ -380,7 +395,7 @@ export default function KenshoList() {
     get(APPLIED_URL).then(setBot).catch(() => {})
   }, [])
 
-  useEffect(() => writeLS(PREFS_KEY, { hidePurchase, sort }), [hidePurchase, sort])
+  useEffect(() => writeLS(PREFS_KEY, { hidePurchase, sort, oneTrip }), [hidePurchase, sort, oneTrip])
 
   const markOf = (id: string): Mark | undefined => marks[id] || (['applied', 'unknown'].includes(bot[id]?.status || '') ? 'applied' : undefined)
 
@@ -663,7 +678,11 @@ export default function KenshoList() {
               <div className="k-actions">
                 {tab === 'x' ? (
                   <>
-                    <a className="k-btn primary" href={xPostOf(it)!.url} target="_blank" rel="noopener noreferrer" onClick={() => mark(it.id, 'applied')}>
+                    <a className="k-btn primary" href={xPostOf(it)!.url} target="_blank" rel="noopener noreferrer" onClick={(e) => {
+                      e.preventDefault()
+                      openX(xPostOf(it)!.url)
+                      mark(it.id, 'applied')
+                    }}>
                       投稿を開く
                     </a>
                     <button className="k-btn" onClick={() => mark(it.id, 'hidden')}>
@@ -707,11 +726,14 @@ export default function KenshoList() {
         if (!cur || !xp) return null
         // 押す順番：フォロー → リポスト →（条件にあれば）いいね。最後を押すと自動で応募済みにして次の懸賞へ
         const needs = cur.xNeeds
-        const steps: { key: string; label: string; href: string }[] = [
-          { key: 'follow', label: `@${xp.user} をフォロー`, href: `https://x.com/intent/follow?screen_name=${xp.user}` },
-          { key: 'rt', label: 'リポスト', href: `https://x.com/intent/retweet?tweet_id=${xp.id}` },
-        ]
-        if (!needs || needs.includes('like')) steps.push({ key: 'like', label: 'いいね', href: `https://x.com/intent/like?tweet_id=${xp.id}` })
+        const wantLike = !needs || needs.includes('like')
+        const steps: { key: string; label: string; href: string }[] = oneTrip
+          ? [{ key: 'post', label: `投稿を開いてフォロー・リポスト${wantLike ? '・いいね' : ''}`, href: xp.url }]
+          : [
+              { key: 'follow', label: `@${xp.user} をフォロー`, href: `https://x.com/intent/follow?screen_name=${xp.user}` },
+              { key: 'rt', label: 'リポスト', href: `https://x.com/intent/retweet?tweet_id=${xp.id}` },
+            ]
+        if (!oneTrip && wantLike) steps.push({ key: 'like', label: 'いいね', href: `https://x.com/intent/like?tweet_id=${xp.id}` })
         // 返信・引用・ハッシュタグ投稿が条件なら、文面入りの投稿画面を開く手順を足す
         const postText = run.text ?? defaultPostText(cur)
         const enc = encodeURIComponent
@@ -781,7 +803,7 @@ export default function KenshoList() {
                   onClick={(e) => {
                     // 状態更新で href が次の手順に書き換わる前に、今の手順のURLを確実に開く
                     e.preventDefault()
-                    window.open(next.href, '_blank', 'noopener')
+                    openX(next.href)
                     const done = { ...run.done, [next.key]: true }
                     if (si === steps.length - 1) {
                       // 最後の手順：開いたら自動で応募済みにして次へ
@@ -796,11 +818,19 @@ export default function KenshoList() {
                   応募済みにして次へ
                 </button>
               )}
+              {oneTrip && si === 0 && (
+                <p className="k-note">
+                  開いた投稿で @{xp.user} のフォロー・リポスト{wantLike ? '・いいね' : ''}を押したら、閉じて戻ってください。戻ると次の懸賞が出ています。
+                </p>
+              )}
               <div className="k-actions">
                 <button className="k-btn" onClick={() => finish('hidden')}>
                   この懸賞はスキップ
                 </button>
               </div>
+              <label className="k-note k-onetrip">
+                <input type="checkbox" checked={oneTrip} onChange={(e) => setOneTrip(e.target.checked)} /> まとめて1回で開く（フォロー・リポスト・いいねを投稿ページで一度に）
+              </label>
             </div>
           </div>
         )
