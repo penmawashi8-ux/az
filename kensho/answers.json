@@ -159,7 +159,7 @@
     }
   },
   "koubo_jp_contest_387709": {
-    "v": 3,
+    "v": 4,
     "quizDone": true,
     "note": "博多和牛クイズ。福岡県産の牛は？○○和牛→博多。i-moniのアンケート形式（1ページ目がクイズ、次でメール・都道府県）",
     "url": "https://i-moni.jp/enquete/1000800104/",
@@ -187,5 +187,39 @@
       "Web_Ken": "{pref}"
     },
     "retryUnknown": true
+  },
+  "koubo_jp_contest_399105": {
+    "v": 1,
+    "skip": "応募リンクからは事業者向けの申込フォーム（電気設備の見積もり等）にしか辿れず、クイズの応募フォームではないため送らない"
+  },
+  "koubo_jp_contest_409932": {
+    "v": 1,
+    "note": "新語・流行語大賞予想(T&D保険)。WEBCASのフォームで欄名が c_q1… とラベルなしのため個別指定。予想はミラノ・コルティナ五輪ペア金の『りくりゅう』。希望コースはオートクッカー ビストロ",
+    "url": "https://www17.webcas.net/form/pub/singo-campaign2026/entry",
+    "set": {
+      "c_q1_first": "{sei}",
+      "c_q1_second": "{mei}",
+      "c_q2_first": "{seiKata}",
+      "c_q2_second": "{meiKata}",
+      "c_q3_year": "{birthYear}",
+      "c_q3_month": "{birthMonth}",
+      "c_q3_day": "{birthDay}",
+      "c_q4_left": "{zip3}",
+      "c_q4_right": "{zip4}",
+      "c_q5": "{pref}",
+      "c_q6": "{city}",
+      "c_q7": "{addr}",
+      "c_q8": "{bldg}",
+      "c_q9_areacode": "{tel1}",
+      "c_q9_citycode": "{tel2}",
+      "c_q9_subscribercode": "{tel3}",
+      "c_q10": "{email}",
+      "c_q10_confirm": "{email}",
+      "c_q11": "30.りくりゅう",
+      "c_q14": "0",
+      "c_q15": "1",
+      "c_q16": "1",
+      "c_q13": "0"
+    }
   }
 }

@@ -58,9 +58,9 @@
     [/(bldg|building|建物|マンション|addr(ess)?3|address-line2|住所3)/i, () => P.bldg],
     [/(street|番地|block_?number|addr(ess)?2|address-line1|住所2)/i, () => P.addr],
     [/(住所|address)/i, () => addr + (P.bldg ? ' ' + P.bldg : '')],
-    [/(sei.?kana|last.?name.?kana|family.?name.?kana|セイ|せい|姓.*(カナ|かな|フリガナ|ふりがな))/i, (h) => (/カナ|カタカナ|フリガナ|kana/i.test(h) ? kata(P.seiKana) : P.seiKana)],
-    [/(mei.?kana|first.?name.?kana|given.?name.?kana|メイ|めい|名.*(カナ|かな|フリガナ|ふりがな))/i, (h) => (/カナ|カタカナ|フリガナ|kana/i.test(h) ? kata(P.meiKana) : P.meiKana)],
-    [/(kana|furigana|フリガナ|ふりがな|カナ)/i, (h) => (/カナ|フリガナ|katakana/i.test(h) ? kata(fullKana) : fullKana)],
+    [/(sei.?kana|last.?name.?kana|family.?name.?kana|セイ|せい|姓.*(カナ|かな|フリガナ|ふりがな))/i, (h) => (/ふりがな|ひらがな|hiragana/i.test(h) ? P.seiKana : kata(P.seiKana))],
+    [/(mei.?kana|first.?name.?kana|given.?name.?kana|メイ|めい|名.*(カナ|かな|フリガナ|ふりがな))/i, (h) => (/ふりがな|ひらがな|hiragana/i.test(h) ? P.meiKana : kata(P.meiKana))],
+    [/(kana|furigana|フリガナ|ふりがな|カナ)/i, (h) => (/ふりがな|ひらがな|hiragana/i.test(h) ? fullKana : kata(fullKana))],
     [/(last.?name|family.?name|sei\b|姓|苗字)/i, () => P.sei],
     [/(first.?name|given.?name|mei\b|^名$|名\(下\))/i, () => P.mei],
     [/(birth.*year|生年|year)/i, () => by],
@@ -169,6 +169,7 @@
       v = opt.value
     }
     setter ? setter.call(el, v) : (el.value = v)
+    el.setAttribute('data-kensho-v', '1')
     el.dispatchEvent(((t) => { const e = document.createEvent('Event'); e.initEvent(t, true, true); return e })('input'))
     el.dispatchEvent(((t) => { const e = document.createEvent('Event'); e.initEvent(t, true, true); return e })('change'))
     el.dispatchEvent(((t) => { const e = document.createEvent('Event'); e.initEvent(t, true, true); return e })('blur'))
@@ -176,6 +177,22 @@
   }
   let n = 0
   let q = 0
+  // WEBCAS 等：郵便番号「名前_left/_right」、電話「_areacode/_citycode/_subscribercode」（ラベルが離れた列にある）
+  {
+    const zip = (P.zip || '').replace(/\D/g, '')
+    const tel = (P.tel || '').replace(/\D/g, '')
+    document.querySelectorAll('input[name$="_left"]').forEach((l) => {
+      const r = document.querySelector(`input[name="${CSS.escape(l.name.replace(/_left$/, '_right'))}"]`)
+      if (r && l.maxLength === 3 && r.maxLength === 4 && zip.length === 7 && !l.value && setVal(l, zip.slice(0, 3)) && setVal(r, zip.slice(3))) n++
+    })
+    document.querySelectorAll('input[name$="_areacode"]').forEach((x) => {
+      const b = x.name.replace(/_areacode$/, '')
+      const c = document.querySelector(`input[name="${CSS.escape(b + '_citycode')}"]`), s = document.querySelector(`input[name="${CSS.escape(b + '_subscribercode')}"]`)
+      if (!c || !s || x.value || tel.length < 10) return
+      const t3 = tel.length === 11 ? [tel.slice(0, 3), tel.slice(3, 7), tel.slice(7)] : [tel.slice(0, 2), tel.slice(2, 6), tel.slice(6)]
+      if (setVal(x, t3[0]) && setVal(c, t3[1]) && setVal(s, t3[2])) n++
+    })
+  }
   // SPIRAL のフォーム：郵便番号は「名前:a / 名前:t」、電話は「名前:a / :e / :n」に分かれ、ラベルがない
   document.querySelectorAll('input[name$=":a"]').forEach((a) => {
     const base = a.name.slice(0, -2)

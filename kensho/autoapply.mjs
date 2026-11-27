@@ -22,6 +22,8 @@ const DIR = path.dirname(fileURLToPath(import.meta.url))
 const DATA = process.env.KENSHO_DATA || 'data/data.json'
 const APPLIED = process.env.KENSHO_APPLIED || 'data/applied.json'
 const SUBMIT = process.env.KENSHO_SUBMIT === '1'
+// テスト用：偽データで「確認」「次へ」ボタンだけ押し、確認画面の内容（エラー等）を見て止まる。最終送信はしない
+const CONFIRM_ONLY = process.env.KENSHO_SUBMIT === 'confirm'
 const MAX = Number(process.env.KENSHO_MAX_APPLY || 60)
 
 let profile
@@ -70,7 +72,7 @@ function placeholders() {
     seiKata: kata(P.seiKana), meiKata: kata(P.meiKana), email: P.email, zip, zip3: zip.slice(0, 3), zip4: zip.slice(3),
     tel, tel1: t3[0], tel2: t3[1], tel3: t3[2], pref: P.pref, city: P.city, addr: P.addr, cityAddr: `${P.city || ''}${P.addr || ''}`,
     bldg: P.bldg, gender: P.gender, genderShort: (P.gender || '').replace(/性$/, ''), age, ageDecade: age ? `${Math.floor(Number(age) / 10) * 10}代` : '',
-    birthYear: (P.birth || '').slice(0, 4), job: P.job || P.occupation || '会社員',
+    birthYear: (P.birth || '').slice(0, 4), birthMonth: String(Number((P.birth || '').split('-')[1] || '') || ''), birthDay: String(Number((P.birth || '').split('-')[2] || '') || ''), job: P.job || P.occupation || '会社員',
   }
 }
 const PH = placeholders()
@@ -100,6 +102,7 @@ async function applyAnswers(frame, set) {
       } else {
         const setter = Object.getOwnPropertyDescriptor(el instanceof HTMLTextAreaElement ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype, 'value')?.set
         setter ? setter.call(el, val) : (el.value = val)
+        el.setAttribute('data-kensho-v', '1')
         fire(el); ok++
       }
     }
@@ -244,6 +247,21 @@ async function findForm(page, minInputs = 2) {
     await page.waitForLoadState('networkidle', { timeout: 8000 }).catch(() => {})
   }
   return { page, frame: null }
+}
+
+/** 入力した文字欄を、人がキーボードで打つのと同じ方法で入れ直す（JSの仕組みで値を管理するフォームが、直接書き込んだ値を空扱いするため） */
+async function retype(frame) {
+  const hs = await frame.$$('input[data-kensho-v]:not([type=checkbox]):not([type=radio]), textarea[data-kensho-v]').catch(() => [])
+  for (const h of hs) {
+    try {
+      if (!(await h.isVisible())) continue
+      const v = await h.inputValue()
+      if (!v) continue
+      await h.fill('', { timeout: 3000 })
+      await h.fill(v, { timeout: 3000 })
+      await h.evaluate((el) => el.dispatchEvent(((t) => { const e = document.createEvent('Event'); e.initEvent(t, true, true); return e })('blur')))
+    } catch {}
+  }
 }
 
 async function clickSubmit(frame) {
@@ -393,6 +411,7 @@ async function applyOne(it, reapply = false) {
         }
       }
       const r = await frame.evaluate(`(${filler})(${JSON.stringify(profile)})`)
+      await retype(frame)
       if (r.login) return { status: 'skip', reason: 'ログインが必要' }
       if (r.captcha) return { status: 'skip', reason: '画像認証あり' }
       if (round === 0 && r.filled === 0 && !(ans?.set && /回答メモ[1-9]/.test(quizNote))) return { status: 'skip', reason: '入力欄が個人情報フォームでない' }
@@ -411,11 +430,27 @@ async function applyOne(it, reapply = false) {
         if (info.blank.length) return { status: 'skip', reason: `答えられない項目あり(${info.blank.slice(0, 3).join(',')})` }
       }
       if (r.missing.length) return { status: 'skip', reason: `必須項目が埋められない(${r.missing.slice(0, 3).join(',')})` }
+      if (CONFIRM_ONLY && round === 0) {
+        const nb = await frame.evaluate(([okSrc, nextSrc]) => {
+          const ok = new RegExp(okSrc), next = new RegExp(nextSrc, 'i')
+          const txt = (b) => (b.value || b.textContent || b.alt || '').replace(/\s+/g, '')
+          const b = Array.from(document.querySelectorAll('button, input[type=submit], input[type=button], a')).find((b) => (b.offsetWidth || b.offsetHeight) && next.test(txt(b)) && !ok.test(txt(b)) && txt(b).length < 20)
+          if (!b) return null
+          b.click(); return txt(b)
+        }, [SUBMIT_BTN.source, /確認|次へ|進む/.source]).catch(() => null)
+        if (!nb) return { status: 'dry-ok', reason: '確認ボタンなし（最終送信の可能性があるため押さない）' }
+        await p.waitForLoadState('load').catch(() => {}); await p.waitForTimeout(2500)
+        const t = (await pageText(p)).replace(/\s+/g, ' ')
+        const errs = t.match(/.{0,40}(必須|入力してください|未入力|誤り|エラー|正しく|一致しません|選択してください).{0,40}/g) || []
+        return { status: 'dry-ok', reason: `確認[${nb}]→ ${mask(errs.slice(0, 8).join(' / ')).slice(0, 600) || 'エラー表示なし'}` }
+      }
       if (!SUBMIT) return { status: 'dry-ok', reason: `入力${r.filled}・アンケート${r.survey}・同意${r.consent}${quizNote}` }
 
       const before = p.url()
       const beforeText = await pageText(p)
-      const btn = await clickSubmit(frame)
+      let btn = await clickSubmit(frame)
+      // フレームで組まれた確認画面などは、入力欄のないフレームにボタンがあるので全フレームを探す
+      if (!btn) for (const f of p.frames()) if (f !== frame && (btn = await clickSubmit(f).catch(() => null))) { frame = f; break }
       if (!btn) {
         // 改善用の手がかり（ボタンの文言・種類とページのパスだけ。個人情報は含まない）
         const bh = await frame
