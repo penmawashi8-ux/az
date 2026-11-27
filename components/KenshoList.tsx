@@ -761,7 +761,10 @@ export default function KenshoList() {
               <div className="k-top">
                 {it.image ? (
                   // eslint-disable-next-line @next/next/no-img-element
-                  <img className="k-thumb" src={thumb(it.image)} alt="" loading="lazy" referrerPolicy="no-referrer" onError={(e) => (e.currentTarget.style.visibility = 'hidden')} />
+                  <a href={it.image} target="_blank" rel="noopener noreferrer" title="タップで画像を大きく表示" onClick={(e) => e.stopPropagation()}>
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img className="k-thumb" src={thumb(it.image)} alt="キャンペーン画像（タップで拡大）" loading="lazy" referrerPolicy="no-referrer" onError={(e) => (e.currentTarget.style.visibility = 'hidden')} />
+                  </a>
                 ) : (
                   <div className="k-thumb k-thumb-empty" aria-hidden="true" />
                 )}
@@ -894,7 +897,10 @@ export default function KenshoList() {
               <div className="k-top">
                 {cur.image ? (
                   // eslint-disable-next-line @next/next/no-img-element
-                  <img className="k-thumb" src={thumb(cur.image)} alt="" referrerPolicy="no-referrer" onError={(e) => (e.currentTarget.style.visibility = 'hidden')} />
+                  <a href={cur.image} target="_blank" rel="noopener noreferrer" title="タップで画像を大きく表示">
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img className="k-thumb" src={thumb(cur.image)} alt="キャンペーン画像（タップで拡大）" referrerPolicy="no-referrer" onError={(e) => (e.currentTarget.style.visibility = 'hidden')} />
+                  </a>
                 ) : (
                   <div className="k-thumb k-thumb-empty" aria-hidden="true" />
                 )}
