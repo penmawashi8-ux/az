@@ -159,7 +159,7 @@
     }
   },
   "koubo_jp_contest_387709": {
-    "v": 1,
+    "v": 2,
     "quizDone": true,
     "note": "博多和牛クイズ。福岡県産の牛は？○○和牛→博多。i-moniのアンケート形式（1ページ目がクイズ、次でメール・都道府県）",
     "url": "https://i-moni.jp/enquete/1000800104/",
@@ -168,25 +168,8 @@
     }
   },
   "koubo_jp_contest_407318": {
-    "v": 1,
-    "quizDone": true,
-    "note": "たまご券(鶏卵公正取引協議会)。Q:公正マークの審査対象→上記すべて(5)。アンケートは一般的な消費者の回答",
-    "url": "https://jpa-keiran-campaig.jp/quiz/",
-    "set": {
-      "question_select": "5",
-      "answer_01[]": [
-        "1",
-        "8"
-      ],
-      "answer_02": "2",
-      "answer_03": "3",
-      "answer_04": "2",
-      "answer_05[]": [
-        "4"
-      ],
-      "user_name": "{name}",
-      "css:input[type=checkbox]:not([name])": true
-    }
+    "v": 2,
+    "skip": "応募フォームに画像認証があるため自動では送らない（答えは『上記すべて』）"
   },
   "koubo_jp_contest_391487": {
     "v": 1,
@@ -201,6 +184,7 @@
       "Web_Yubin1": "{zip3}",
       "Web_Yubin2": "{zip4}",
       "Web_Ken": "{pref}"
-    }
+    },
+    "retryUnknown": true
   }
 }

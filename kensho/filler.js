@@ -176,6 +176,19 @@
   }
   let n = 0
   let q = 0
+  // SPIRAL のフォーム：郵便番号は「名前:a / 名前:t」、電話は「名前:a / :e / :n」に分かれ、ラベルがない
+  document.querySelectorAll('input[name$=":a"]').forEach((a) => {
+    const base = a.name.slice(0, -2)
+    const by = (suf) => document.querySelector(`input[name="${CSS.escape(base + suf)}"]`)
+    const zip = (P.zip || '').replace(/\D/g, '')
+    const tel = (P.tel || '').replace(/\D/g, '')
+    if (by(':t') && !by(':e') && zip.length === 7) {
+      if (setVal(a, zip.slice(0, 3)) && setVal(by(':t'), zip.slice(3))) n++
+    } else if (by(':e') && by(':n') && tel.length >= 10) {
+      const t3 = tel.length === 11 ? [tel.slice(0, 3), tel.slice(3, 7), tel.slice(7)] : [tel.slice(0, 2), tel.slice(2, 6), tel.slice(6)]
+      if (setVal(a, t3[0]) && setVal(by(':e'), t3[1]) && setVal(by(':n'), t3[2])) n++
+    }
+  })
   document.querySelectorAll('input, select, textarea').forEach((el) => {
     const type = (el.getAttribute('type') || '').toLowerCase()
     if (['hidden', 'submit', 'button', 'checkbox', 'radio', 'file', 'password', 'image', 'search'].includes(type)) return

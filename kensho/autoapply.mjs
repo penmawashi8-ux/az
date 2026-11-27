@@ -257,7 +257,7 @@ async function clickSubmit(frame) {
         (b) => (b.offsetWidth || b.offsetHeight) && !b.disabled && !ng.test(txt(b)),
       )
       // フォームを JS で送る文字リンク（<a href="javascript:…submit()">質問回答完了</a> 等）も候補にする
-      const jsLinks = Array.from(document.querySelectorAll('a[href^="javascript:"]')).filter((a) => (a.offsetWidth || a.offsetHeight) && /submit/i.test(a.getAttribute('href')) && !ng.test(txt(a)))
+      const jsLinks = Array.from(document.querySelectorAll('a[href^="javascript:" i]')).filter((a) => (a.offsetWidth || a.offsetHeight) && /submit/i.test(a.getAttribute('href')) && !ng.test(txt(a)))
       const b = btns.find((b) => ok.test(txt(b))) || btns.find((b) => next.test(txt(b))) || btns.find((b) => b.type === 'submit' || b.type === 'image') || jsLinks[0]
       if (!b) return null
       b.click()
@@ -494,6 +494,8 @@ for (const it of targets) {
       v: BOT_VERSION,
       ans: ANSWERS[it.id]?.v,
       tries: (applied[it.id]?.tries || 0) + 1,
+      // 手動訂正を反映済みの印を引き継ぐ（なくすと次の実行で訂正が再適用され、新しい結果が上書きされる）
+      overridden: applied[it.id]?.overridden,
       // 履歴表示用（締切後に一覧から消えても残るように）
       title: it.title,
       prize: it.prizeShort || (it.prize || '').slice(0, 60),
