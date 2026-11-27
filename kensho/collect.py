@@ -27,7 +27,7 @@ NEW_PATH = os.environ.get("KENSHO_NEW") or os.path.join(ROOT, "kensho", ".new_it
 JST = dt.timezone(dt.timedelta(hours=9))
 UA = "Mozilla/5.0 (compatible; kensho-collector/1.0; personal RSS reader)"
 FETCH_DELAY = 1.5          # 詳細ページ取得の間隔（秒）
-MAX_DETAIL_FETCH = int(os.environ.get("KENSHO_MAX_FETCH", "200"))
+MAX_DETAIL_FETCH = int(os.environ.get("KENSHO_MAX_FETCH", "400"))
 NO_DEADLINE_TTL_DAYS = 30  # 締切不明のものは公開から30日で消す
 
 FEEDS = [
