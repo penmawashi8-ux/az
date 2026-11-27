@@ -15,7 +15,7 @@
   const kata = (s) => (s || '').replace(/[ぁ-ゖ]/g, (c) => String.fromCharCode(c.charCodeAt(0) + 0x60))
   const comment = P.comment || 'いつも楽しく拝見しています。これからも応援しています。'
   const SKIP = /その他|答えたくない|回答しない|回答しません|わからない|分からない|選択して|選んで|^-+$|^\s*$/
-  const NO_TOUCH = /メルマガ|メールマガジン|配信を希望|ニュースレター|案内を受け|受け取る|お知らせを希望/
+  const NO_TOUCH = /メルマガ|メールマガジン|配信を希望|ニュースレター|案内を受け|受け取る|お知らせを希望|ファンクラブ|入会|会員登録|会員になる|メール配信|情報配信|お知らせメール|fan.?club|mail.?mag|newsletter|magazine/i
   const CONSENT = /同意|規約|ポリシー|個人情報の取り?扱/
   const PERSONAL_Q = /第\s*\d\s*子|お子|子ども|子供|こども|妊娠|出産|年収|世帯|家族構成|職業|勤務|会社|役職|学年|学校|child|kids|baby|pregnan|income|occupation/i
   const POSITIVE = /とても|非常に|満足|好き|はい|ある|あり|興味がある|使ってみたい|買いたい|購入したい|知っている|良い|よい/
@@ -318,7 +318,7 @@
     if (els.some((e) => NO_TOUCH.test(t(e))) || NO_TOUCH.test(gl)) {
       // メルマガ等の配信希望が必須なら「希望しない」を選ぶ（任意なら触らない）
       if (req && k.startsWith('radio:')) {
-        const no = els.find((e) => /希望しない|受け取らない|不要|しない|いいえ/.test(txt(e)))
+        const no = els.find((e) => /希望しない|受け取らない|入会しない|登録しない|加入しない|不要|しない|いいえ/.test(txt(e)))
         if (no) { no.click(); q++ }
       }
       return
