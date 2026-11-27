@@ -22,7 +22,7 @@ const DIR = path.dirname(fileURLToPath(import.meta.url))
 const DATA = process.env.KENSHO_DATA || 'data/data.json'
 const APPLIED = process.env.KENSHO_APPLIED || 'data/applied.json'
 const SUBMIT = process.env.KENSHO_SUBMIT === '1'
-const MAX = Number(process.env.KENSHO_MAX_APPLY || 40)
+const MAX = Number(process.env.KENSHO_MAX_APPLY || 60)
 
 let profile
 try {
@@ -257,7 +257,8 @@ async function clickSubmit(frame) {
         (b) => (b.offsetWidth || b.offsetHeight) && !b.disabled && !ng.test(txt(b)),
       )
       // フォームを JS で送る文字リンク（<a href="javascript:…submit()">質問回答完了</a> 等）も候補にする
-      const jsLinks = Array.from(document.querySelectorAll('a[href^="javascript:" i]')).filter((a) => (a.offsetWidth || a.offsetHeight) && /submit/i.test(a.getAttribute('href')) && !ng.test(txt(a)))
+      const jsLinks = Array.from(document.querySelectorAll('a[href^="javascript:" i], a[href="#"], a[onclick]')).filter((a) => (a.offsetWidth || a.offsetHeight) && !ng.test(txt(a)) && (/submit/i.test(`${a.getAttribute('href')} ${a.getAttribute('onclick') || ''}`) || ok.test(txt(a))))
+      jsLinks.sort((x, y) => Number(ok.test(txt(y))) - Number(ok.test(txt(x))))
       const b = btns.find((b) => ok.test(txt(b))) || btns.find((b) => next.test(txt(b))) || btns.find((b) => b.type === 'submit' || b.type === 'image') || jsLinks[0]
       if (!b) return null
       b.click()
@@ -434,15 +435,16 @@ async function applyOne(it, reapply = false) {
       trace.push(`${round}:${btn}→${new URL(p.url()).pathname.slice(0, 40)} ${mask(fresh).replace(/\s+/g, ' ').slice(0, 120)}`)
       // 確認画面（「内容をご確認ください」「お間違いがなければ〜確定」）は、未入力の任意項目が「未入力」と表示されていてもエラーではない
       const confirmUrl = /confirm|kakunin|check\b|preview/i.test(new URL(p.url()).pathname)
-      const isConfirm = confirmUrl || /お間違いがなければ|内容をご?確認(の上|いただき|ください)|確認画面|以下の内容で|この内容で(よろしければ|送信|応募)|(応募|送信)を確定/.test(fresh.slice(0, 1500))
+      const notYet = /まだ.{0,10}送信されて(い|お)?(ません|りません)|送信は(まだ)?完了していません|まだ応募は完了していません/.test(fresh)
+      const isConfirm = confirmUrl || notYet || /お間違いがなければ|内容をご?確認(の上|いただき|ください)|確認画面|以下の内容で|この内容で(よろしければ|送信|応募)|(応募|送信)を確定/.test(fresh.slice(0, 1500))
       // 完了ページ（thanks/complete 等への遷移＋お礼の文言）は、「メールで確認」等の文言があっても完了とみなす
       const doneUrl = /thank|complete|finish|done|kanryo|end\.(php|html)/i.test(new URL(p.url()).pathname) && p.url() !== before
       // 確認画面のURL（/confirm 等）では「ご入力ありがとうございます」等があっても完了扱いしない
-      if ((doneUrl || (DONE.test(fresh) && !confirmUrl)) && !/(入力してください|入力されていません|正しく入力|不備|エラーが発生)/.test(fresh.slice(0, 800))) {
+      if (!notYet && (doneUrl || (DONE.test(fresh) && !confirmUrl)) && !/(入力してください|入力されていません|正しく入力|不備|エラーが発生)/.test(fresh.slice(0, 800))) {
         return { status: 'applied', reason: (/メール.{0,10}(確認|認証|届|送信)/.test(fresh) ? '確認メールあり' : '') + quizNote + (hasEmail ? '' : '・メール欄なし'), trace }
       }
       if (!isConfirm && /(必須|入力してください|正しく入力|エラー|不正|不備|入力されていません|選択されていません|未入力|未選択|選択してください|入力しないでください|チェックを入れ)/.test(fresh.slice(0, 1500))) return { status: 'fail', reason: '送信時に入力エラー', trace }
-      if (DONE.test(fresh) && !confirmUrl) {
+      if (DONE.test(fresh) && !confirmUrl && !notYet) {
         return { status: 'applied', reason: (/メール.{0,10}(確認|認証|届|送信)/.test(fresh) ? '確認メールあり' : '') + quizNote + (hasEmail ? '' : '・メール欄なし'), trace }
       }
       // 画面が変わらなければ二重送信しないよう、ここで止める

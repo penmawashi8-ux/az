@@ -9,5 +9,10 @@
     "v": 2,
     "status": "applied",
     "reason": "完了ページ(/submissions/thanks)で『回答の送信が完了しました』を確認（訂正設定の再適用で未確認に戻っていたのを修正）"
+  },
+  "koubo_jp_contest_391487": {
+    "v": 1,
+    "status": "unknown",
+    "reason": "確認画面（『まだ応募内容は送信されておりません』）を完了と誤判定していたため訂正"
   }
 }

@@ -159,20 +159,21 @@
     }
   },
   "koubo_jp_contest_387709": {
-    "v": 2,
+    "v": 3,
     "quizDone": true,
     "note": "博多和牛クイズ。福岡県産の牛は？○○和牛→博多。i-moniのアンケート形式（1ページ目がクイズ、次でメール・都道府県）",
     "url": "https://i-moni.jp/enquete/1000800104/",
     "set": {
       "ans_21": "博多"
-    }
+    },
+    "retryUnknown": true
   },
   "koubo_jp_contest_407318": {
     "v": 2,
     "skip": "応募フォームに画像認証があるため自動では送らない（答えは『上記すべて』）"
   },
   "koubo_jp_contest_391487": {
-    "v": 1,
+    "v": 2,
     "note": "おいしい山形11月プレゼント。Q4(イメージする食べもの)・Q5(購入時に意識するもの)は選択肢ごとに別名のチェックボックスで、必須なのに未選択だった。郵便番号・都道府県も明示",
     "url": "https://ss.nmai.org/enquete_pre_0811.html",
     "set": {
