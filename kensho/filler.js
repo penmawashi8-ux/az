@@ -130,10 +130,10 @@
   })()
   const ageFits = (txt) => {
     if (myAge == null) return false
-    const t = (txt || '').normalize('NFKC')
+    const t = (txt || '').normalize('NFKC').replace(/^\s*[0-9a-zA-Z]{1,2}\s*[.)．:：、]\s*/, '')
     let m = t.match(/(\d+)\s*[〜~～\-ー－]\s*(\d+)/)
     if (m) return myAge >= +m[1] && myAge <= +m[2]
-    if ((m = t.match(/(\d+)\s*代/))) return Math.floor(myAge / 10) * 10 === +m[1]
+    if ((m = t.match(/(\d+)\s*歳?\s*代/))) return Math.floor(myAge / 10) * 10 === +m[1]
     if ((m = t.match(/(\d+)\s*歳?\s*(以下|未満)/))) return m[2] === '以下' ? myAge <= +m[1] : myAge < +m[1]
     if ((m = t.match(/(\d+)\s*歳?\s*以上/))) return myAge >= +m[1]
     return false
@@ -155,7 +155,11 @@
   const AGE_Q = /年齢|年代|age/i
   const JOB_Q = /職業|ご職業|occupation|job/i
   // 職業はユーザー指定で「会社員」（選択肢になければ近いもの→その他）
-  const JOB_PICK = /^(会社員|正社員|会社員・公務員|会社員（正社員）|会社勤め|給与所得者)|^会社員/
+  const JOB_PICK_RE = /^(会社員|正社員|会社勤め|給与所得者|社員)/
+  // 「1.会社員」「A) 会社員」のような番号付きの選択肢にも対応
+  const clean = (t) => (t || '').normalize('NFKC').replace(/^\s*[0-9a-zA-Z]{1,2}\s*[.)．:：、]\s*/, '').trim()
+  const JOB_PICK = { test: (t) => JOB_PICK_RE.test(clean(t)) }
+  const GENDER_Q = /性別|gender|sex/i
   const setVal = (el, v) => {
     const proto = el instanceof HTMLSelectElement ? HTMLSelectElement.prototype : el instanceof HTMLTextAreaElement ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype
     const setter = Object.getOwnPropertyDescriptor(proto, 'value')?.set
@@ -208,6 +212,12 @@
       return
     }
     if (PERSONAL_Q.test(head) && !isReq(el)) return
+    if (el instanceof HTMLSelectElement && GENDER_Q.test(head) && !/子/.test(head)) {
+      const g = (P.gender || '').replace(/性$/, '')
+      const o = g && Array.from(el.options).find((o) => o.value && clean(o.text).startsWith(g))
+      if (o) { setVal(el, o.value); n++ } else if (isReq(el)) { const na = Array.from(el.options).find((o) => /無回答|回答しない|答えたくない/.test(o.text)); na ? setVal(el, na.value) : el.setAttribute('data-kensho-unknown', '1') }
+      return
+    }
     if (el instanceof HTMLSelectElement && JOB_Q.test(head)) {
       const o = Array.from(el.options).find((o) => o.value && JOB_PICK.test(o.text)) || Array.from(el.options).find((o) => /その他/.test(o.text))
       if (o) { setVal(el, o.value); q++ } else el.setAttribute('data-kensho-unknown', '1')
@@ -256,7 +266,7 @@
       return
     }
     if (/性別|gender|sex/i.test(gl) && !/子/.test(gl)) {
-      const c = P.gender && els.find((e) => txt(e).includes(P.gender.replace(/性$/, '')))
+      const c = P.gender && els.find((e) => clean(txt(e)).startsWith(P.gender.replace(/性$/, '')))
       if (c) { c.click(); n++ } else if (req) { const na = els.find((e) => /無回答|回答しない|答えたくない/.test(txt(e))); na ? na.click() : els[0].setAttribute('data-kensho-unknown', '1') }
       return
     }

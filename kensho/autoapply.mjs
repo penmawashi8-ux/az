@@ -266,18 +266,31 @@ async function clickSubmit(frame) {
 }
 
 // ログ・記録に個人情報が残らないよう、プロフィールの値を伏せる
-const SECRETS = Object.values(profile).filter((v) => typeof v === 'string' && v.length >= 2).flatMap((v) => [v, v.normalize('NFKC'), v.normalize('NFKC').replace(/\D/g, '')].filter((x) => x.length >= 2))
+// プロフィールの値と、その表記ゆれ（全角半角・ひらがな/カタカナ・空白なし）をログから消す
+const toKata = (x) => x.replace(/[\u3041-\u3096]/g, (c) => String.fromCharCode(c.charCodeAt(0) + 0x60))
+const toHira = (x) => x.replace(/[\u30a1-\u30f6]/g, (c) => String.fromCharCode(c.charCodeAt(0) - 0x60))
+const SECRETS = [...new Set(Object.values(profile).filter((v) => typeof v === 'string' && v.length >= 2).flatMap((v) => {
+  const n = v.normalize('NFKC').trim()
+  return [v, n, n.replace(/\D/g, ''), n.replace(/\s+/g, ''), toKata(n), toHira(n), toKata(n).replace(/\s+/g, '')]
+}))].filter((x) => x.length >= 2).sort((a, b) => b.length - a.length)
 function mask(t) {
-  let out = t || ''
+  let out = (t || '').normalize('NFKC')
   for (const v of SECRETS) out = out.split(v).join('***')
+  // ラベルの直後に出る氏名・フリガナは念のため丸ごと伏せる
+  out = out.replace(/(氏名|お名前|名前|フリガナ|ふりがな|カナ|セイ|メイ)(\s*[:：]?\s*)([\u3040-\u30ff\u4e00-\u9fff々ー]+(\s+[\u3040-\u30ff\u4e00-\u9fff々ー]+)?)/g, (m, a, b, c) => (/^\*+$/.test(c) ? m : `${a}${b}***`))
   return out.replace(/[\w.+-]+@[\w-]+\.[\w.]+/g, '***@***').replace(/\d{2,4}-?\d{2,4}-?\d{3,4}/g, '***')
+}
+// 既存の記録も伏せ直す（以前の伏せ方ではフリガナが残っていた）
+for (const r of Object.values(applied)) {
+  if (Array.isArray(r.trace)) r.trace = r.trace.map(mask)
+  if (typeof r.reason === 'string') r.reason = mask(r.reason)
 }
 // 自分の情報では答えられない項目（出産予定日・会員番号・希望店舗など）→ 応募資格がない可能性
 const UNFILLABLE = /予定日|お子様|子ども|子供|学年|学校名|会員番号|会員ID|お客様番号|店舗|店名|シリアル|コード|レシート|購入日|購入店|expected|due_?date|member_?(no|id)|shop|store|serial|receipt|child|kids/i
 
 const SCAM_TEXT = /当選確定|必ず当たる|あなたが選ばれ|おめでとうございます[^。]{0,10}当選|送料(を|は)?(ご)?負担|手数料[^。]{0,10}(お支払|振込|必要)|代引き|事務手数料/
 // 個人情報が協賛企業・第三者に渡り、営業連絡が来るタイプ（リード獲得型）の懸賞
-const LEADGEN = /第三者(へ|に)?の?提供に同意|協賛企業[^。]{0,15}(提供|連絡|ご案内|お知らせ)|提携企業[^。]{0,15}(提供|連絡|ご案内)|スポンサー企業[^。]{0,15}(提供|連絡)/
+const LEADGEN = /タイムシェア|バケーション・?オーナーシップ|第三者(へ|に)?の?提供に同意|協賛企業[^。]{0,15}(提供|連絡|ご案内|お知らせ)|提携企業[^。]{0,15}(提供|連絡|ご案内)|スポンサー企業[^。]{0,15}(提供|連絡)/
 const SENSITIVE_FIELD = /card|cvv|cvc|security.?code|有効期限|カード番号|口座|bank|account.?number|暗証|pin\b|マイナンバー|my.?number|個人番号|password|パスワード/i
 async function checkRisk(p, frame, text) {
   const url = frame.url()
@@ -417,14 +430,16 @@ async function applyOne(it, reapply = false) {
       const fresh = after.split('\n').map((l) => l.trim()).filter((l) => l && !seen.has(l)).join('\n')
       trace.push(`${round}:${btn}→${new URL(p.url()).pathname.slice(0, 40)} ${mask(fresh).replace(/\s+/g, ' ').slice(0, 120)}`)
       // 確認画面（「内容をご確認ください」「お間違いがなければ〜確定」）は、未入力の任意項目が「未入力」と表示されていてもエラーではない
-      const isConfirm = /お間違いがなければ|内容をご?確認(の上|いただき|ください)|確認画面|以下の内容で|この内容で(よろしければ|送信|応募)|(応募|送信)を確定/.test(fresh.slice(0, 1500))
+      const confirmUrl = /confirm|kakunin|check\b|preview/i.test(new URL(p.url()).pathname)
+      const isConfirm = confirmUrl || /お間違いがなければ|内容をご?確認(の上|いただき|ください)|確認画面|以下の内容で|この内容で(よろしければ|送信|応募)|(応募|送信)を確定/.test(fresh.slice(0, 1500))
       // 完了ページ（thanks/complete 等への遷移＋お礼の文言）は、「メールで確認」等の文言があっても完了とみなす
       const doneUrl = /thank|complete|finish|done|kanryo|end\.(php|html)/i.test(new URL(p.url()).pathname) && p.url() !== before
-      if ((doneUrl || DONE.test(fresh)) && !/(入力してください|入力されていません|正しく入力|不備|エラーが発生)/.test(fresh.slice(0, 800))) {
+      // 確認画面のURL（/confirm 等）では「ご入力ありがとうございます」等があっても完了扱いしない
+      if ((doneUrl || (DONE.test(fresh) && !confirmUrl)) && !/(入力してください|入力されていません|正しく入力|不備|エラーが発生)/.test(fresh.slice(0, 800))) {
         return { status: 'applied', reason: (/メール.{0,10}(確認|認証|届|送信)/.test(fresh) ? '確認メールあり' : '') + quizNote + (hasEmail ? '' : '・メール欄なし'), trace }
       }
       if (!isConfirm && /(必須|入力してください|正しく入力|エラー|不正|不備|入力されていません|選択されていません|未入力|未選択|選択してください|入力しないでください|チェックを入れ)/.test(fresh.slice(0, 1500))) return { status: 'fail', reason: '送信時に入力エラー', trace }
-      if (DONE.test(fresh)) {
+      if (DONE.test(fresh) && !confirmUrl) {
         return { status: 'applied', reason: (/メール.{0,10}(確認|認証|届|送信)/.test(fresh) ? '確認メールあり' : '') + quizNote + (hasEmail ? '' : '・メール欄なし'), trace }
       }
       // 画面が変わらなければ二重送信しないよう、ここで止める

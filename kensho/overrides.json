@@ -4,5 +4,11 @@
     "v": 1,
     "status": "applied",
     "reason": "完了ページ(thanks.php)で『ご応募ありがとうございました』を確認（誤ってエラー扱いしていたのを訂正）"
+  },
+  "koubo_jp_contest_401451": {
+    "v": 1,
+    "status": "unknown",
+    "reason": "確認画面で止まっていた（未送信）",
+    "note": "確認画面を完了と誤判定していたため訂正"
   }
 }
