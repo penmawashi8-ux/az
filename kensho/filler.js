@@ -154,6 +154,8 @@
   }
   const AGE_Q = /年齢|年代|age/i
   const JOB_Q = /職業|ご職業|occupation|job/i
+  // 職業はユーザー指定で「会社員」（選択肢になければ近いもの→その他）
+  const JOB_PICK = /^(会社員|正社員|会社員・公務員|会社員（正社員）|会社勤め|給与所得者)|^会社員/
   const setVal = (el, v) => {
     const proto = el instanceof HTMLSelectElement ? HTMLSelectElement.prototype : el instanceof HTMLTextAreaElement ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype
     const setter = Object.getOwnPropertyDescriptor(proto, 'value')?.set
@@ -207,7 +209,7 @@
     }
     if (PERSONAL_Q.test(head) && !isReq(el)) return
     if (el instanceof HTMLSelectElement && JOB_Q.test(head)) {
-      const o = Array.from(el.options).find((o) => /その他/.test(o.text))
+      const o = Array.from(el.options).find((o) => o.value && JOB_PICK.test(o.text)) || Array.from(el.options).find((o) => /その他/.test(o.text))
       if (o) { setVal(el, o.value); q++ } else el.setAttribute('data-kensho-unknown', '1')
       return
     }
@@ -259,7 +261,7 @@
       return
     }
     if (JOB_Q.test(gl) && req) {
-      const c = els.find((e) => /その他/.test(txt(e)))
+      const c = els.find((e) => JOB_PICK.test(txt(e))) || els.find((e) => /その他/.test(txt(e)))
       if (c) { c.click(); q++ } else els[0].setAttribute('data-kensho-unknown', '1')
       return
     }

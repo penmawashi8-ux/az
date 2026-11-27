@@ -46,6 +46,8 @@ KEYWORD_PAGES = [
     *[("koubo", f"https://koubo.jp/category/present/{c}") for c in (
         "all", "baby", "entertainment", "fashion", "food", "gift-certificate", "life",
         "luxury", "pet", "prize", "talent", "travel-voucher")],
+    # 公募ガイドの懸賞一覧（全ページ。ジャンル別ページは先頭40件程度しか出ないため）
+    *[("koubo", f"https://koubo.jp/contest/list?c=13&p={p}") for p in range(1, 61)],
     ("prtimes", "https://prtimes.jp/topics/keywords/" + urllib.parse.quote("プレゼントキャンペーン")),
     ("prtimes", "https://prtimes.jp/topics/keywords/" + urllib.parse.quote("キャンペーン")),
     *[("prtimes", "https://prtimes.jp/topics/keywords/" + urllib.parse.quote(k))

@@ -70,7 +70,7 @@ function placeholders() {
     seiKata: kata(P.seiKana), meiKata: kata(P.meiKana), email: P.email, zip, zip3: zip.slice(0, 3), zip4: zip.slice(3),
     tel, tel1: t3[0], tel2: t3[1], tel3: t3[2], pref: P.pref, city: P.city, addr: P.addr, cityAddr: `${P.city || ''}${P.addr || ''}`,
     bldg: P.bldg, gender: P.gender, genderShort: (P.gender || '').replace(/性$/, ''), age, ageDecade: age ? `${Math.floor(Number(age) / 10) * 10}代` : '',
-    birthYear: (P.birth || '').slice(0, 4), job: P.job || P.occupation || '',
+    birthYear: (P.birth || '').slice(0, 4), job: P.job || P.occupation || '会社員',
   }
 }
 const PH = placeholders()
