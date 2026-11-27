@@ -144,5 +144,63 @@
       "field_6443896": "{job}"
     },
     "url": "https://business.form-mailer.jp/fms/b4fbab68372752"
+  },
+  "koubo_jp_contest_399509": {
+    "v": 1,
+    "quizDone": true,
+    "note": "ユンケルクイズ。ローヤルG錠は飲みやすい○○タイプ→錠剤(C)。応募フォームはページの『答えを送る』リンク先(SPIRAL)",
+    "url": "https://reg34.smp.ne.jp/regist/is?SMPFORM=qbqj-maqdlf-5bfe8ba220184adc345b2798271a1aa1",
+    "set": {
+      "quiz": "3",
+      "name": "{name}",
+      "nameKana": "{seiKata}{meiKata}",
+      "email": "{email}",
+      "email:cf": "{email}"
+    }
+  },
+  "koubo_jp_contest_387709": {
+    "v": 1,
+    "quizDone": true,
+    "note": "博多和牛クイズ。福岡県産の牛は？○○和牛→博多。i-moniのアンケート形式（1ページ目がクイズ、次でメール・都道府県）",
+    "url": "https://i-moni.jp/enquete/1000800104/",
+    "set": {
+      "ans_21": "博多"
+    }
+  },
+  "koubo_jp_contest_407318": {
+    "v": 1,
+    "quizDone": true,
+    "note": "たまご券(鶏卵公正取引協議会)。Q:公正マークの審査対象→上記すべて(5)。アンケートは一般的な消費者の回答",
+    "url": "https://jpa-keiran-campaig.jp/quiz/",
+    "set": {
+      "question_select": "5",
+      "answer_01[]": [
+        "1",
+        "8"
+      ],
+      "answer_02": "2",
+      "answer_03": "3",
+      "answer_04": "2",
+      "answer_05[]": [
+        "4"
+      ],
+      "user_name": "{name}",
+      "css:input[type=checkbox]:not([name])": true
+    }
+  },
+  "koubo_jp_contest_391487": {
+    "v": 1,
+    "note": "おいしい山形11月プレゼント。Q4(イメージする食べもの)・Q5(購入時に意識するもの)は選択肢ごとに別名のチェックボックスで、必須なのに未選択だった。郵便番号・都道府県も明示",
+    "url": "https://ss.nmai.org/enquete_pre_0811.html",
+    "set": {
+      "W_anna11": true,
+      "W_anna12": true,
+      "W_anna22": true,
+      "W_anna33": true,
+      "W_anna36": true,
+      "Web_Yubin1": "{zip3}",
+      "Web_Yubin2": "{zip4}",
+      "Web_Ken": "{pref}"
+    }
   }
 }

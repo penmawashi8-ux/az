@@ -112,11 +112,11 @@ async function applyAnswers(frame, set) {
 const NO_DUP = /(重複|複数回|二重|同一人物|同一の方)[^。]{0,25}(応募|エントリー)?[^。]{0,25}(無効|禁止|不可|できません|お断り|認め|対象外|取り消)|(お?一人様?|おひとり様?|1人|１人|お一人)\s*(につき)?\s*(1|１|一)\s*(回|口)(限り|まで|のみ)?/
 
 // ロボットの版。上げると「フォームが見つからない」等でスキップした懸賞に再挑戦する
-const BOT_VERSION = 13
+const BOT_VERSION = 14
 const RETRYABLE = /フォームが見つからない|入力欄が個人情報フォームでない|必須項目が埋められない|クイズに答えられない/
-const ENTRY_LINK = /応募フォーム|応募する|申し込む|申込む|申込み|お申し込み|エントリーする|[^要規方資条]?応募$|会場に応募|に応募|応募はこちら|ご応募はこちら|応募ページ|エントリー|参加する|アンケートに(回答|答え)|アンケートはこちら|今すぐ応募|応募画面|フォームへ|応募へ|^\s*応募\s*$|ENTRY|Entry|APPLY|Apply|応募受付|応募ボタン|プレゼントに応募|キャンペーンに参加/
+const ENTRY_LINK = /応募フォーム|応募する|申し込む|申込む|申込み|お申し込み|エントリーする|[^要規方資条]?応募$|会場に応募|に応募|応募はこちら|ご応募はこちら|応募ページ|エントリー|参加する|アンケートに(回答|答え)|アンケートはこちら|今すぐ応募|応募画面|フォームへ|応募へ|^\s*応募\s*$|ENTRY|Entry|APPLY|Apply|応募受付|応募ボタン|プレゼントに応募|キャンペーンに参加|答えを送る|クイズに(答え|挑戦|回答|チャレンジ)|クイズへ|回答する|回答はこちら|回答フォーム/
 const ENTRY_NG = /応募要項|応募規約(?!に同意)|応募方法|応募資格|応募条件|注意事項|当選発表|よくある|FAQ|プライバシー|試乗|来店予約|予約|資料請求|お問い?合わ?せ|購入|カート|会員登録|ログイン|ダウンロード|アプリ/
-const FORM_HREF = /forms\.gle\/|docs\.google\.com\/forms|form\.run\/|formzu|questant\.jp|forms\.office\.com|tayori\.com\/form|formmailer|form-mailer\.jp|forms\.cloud\.microsoft|msgs\.jp\/webapp\/form|cuenote|\/(entry|apply|enquete|questionnaire|form)(\/|\.|\?|$)/i
+const FORM_HREF = /forms\.gle\/|docs\.google\.com\/forms|form\.run\/|formzu|questant\.jp|forms\.office\.com|tayori\.com\/form|formmailer|form-mailer\.jp|forms\.cloud\.microsoft|msgs\.jp\/webapp\/form|cuenote|smp\.ne\.jp\/regist|i-moni\.jp\/enquete|pro\.form-mailer|business\.form-mailer|\/(entry|apply|enquete|questionnaire|form)(\/|\.|\?|$)/i
 const NO_AUTO = /(自動|機械的|プログラム|ツール|ボット|bot|スクリプト|代行)[^。]{0,30}(応募|エントリー|参加)[^。]{0,30}(禁止|無効|お断り|認め|できません|対象外|取り消)/i
 const DONE = /応募(が|を)?(完了|受け付け|受付)|受け?付けました|受付(が|を)?完了|送信(が|を)?完了|ご応募(いただき|頂き)|ありがとうございました|ありがとうございます|エントリー(が|を)?完了|thank\s*you/i
 const NG_BTN = /戻る|修正|キャンセル|リセット|クリア|ログイン|検索|シェア|閉じる|会員登録|新規登録/
@@ -184,15 +184,15 @@ async function pageText(page) {
 }
 
 /** 応募フォームが見つからなければ「応募はこちら」系のリンクを最大2回たどる */
-async function findForm(page) {
+async function findForm(page, minInputs = 2) {
   for (let hop = 0; hop < 3; hop++) {
     const { frame, inputs } = await bestFrame(page)
-    if (frame && inputs >= 2) return { page, frame }
+    if (frame && inputs >= minInputs) return { page, frame }
     // 遅れて描画されるフォーム（form.run 等）を待ってもう一度
     await page.waitForTimeout(4000)
     {
       const again = await bestFrame(page)
-      if (again.frame && again.inputs >= 2) return { page, frame: again.frame }
+      if (again.frame && again.inputs >= minInputs) return { page, frame: again.frame }
     }
     if (hop === 2) break
     // 遅延読み込みの部分も出すため最後までスクロール
@@ -256,7 +256,9 @@ async function clickSubmit(frame) {
       const btns = Array.from(document.querySelectorAll('button, input[type=submit], input[type=image], input[type=button], a[role=button], [role=button]')).filter(
         (b) => (b.offsetWidth || b.offsetHeight) && !b.disabled && !ng.test(txt(b)),
       )
-      const b = btns.find((b) => ok.test(txt(b))) || btns.find((b) => next.test(txt(b))) || btns.find((b) => b.type === 'submit' || b.type === 'image')
+      // フォームを JS で送る文字リンク（<a href="javascript:…submit()">質問回答完了</a> 等）も候補にする
+      const jsLinks = Array.from(document.querySelectorAll('a[href^="javascript:"]')).filter((a) => (a.offsetWidth || a.offsetHeight) && /submit/i.test(a.getAttribute('href')) && !ng.test(txt(a)))
+      const b = btns.find((b) => ok.test(txt(b))) || btns.find((b) => next.test(txt(b))) || btns.find((b) => b.type === 'submit' || b.type === 'image') || jsLinks[0]
       if (!b) return null
       b.click()
       return txt(b).slice(0, 20)
@@ -324,7 +326,8 @@ async function applyOne(it, reapply = false) {
     await page.goto(ans?.url || it.entryUrl, { waitUntil: 'domcontentloaded', timeout: 30000 })
     await page.waitForLoadState('networkidle', { timeout: 8000 }).catch(() => {})
     const landing = await pageText(page) // クイズの答え探し用（キャンペーン本文）
-    const found = await findForm(page)
+    // 回答メモで応募フォームのURLを直接指定した懸賞は、入力欄が1つ（クイズだけのページ等）でもフォームとみなす
+    const found = await findForm(page, ans?.url ? 1 : 2)
     if (found.sns) return { status: 'skip', reason: 'SNS応募' }
     if (!found.frame) {
       // 改善用の手がかり（ボタン/リンクの文言とURLのパスだけ。個人情報は含まない）
