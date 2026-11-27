@@ -104,7 +104,7 @@ async function applyAnswers(frame, set) {
 const NO_DUP = /(重複|複数回|二重|同一人物|同一の方)[^。]{0,25}(応募|エントリー)?[^。]{0,25}(無効|禁止|不可|できません|お断り|認め|対象外|取り消)|(お?一人様?|おひとり様?|1人|１人|お一人)\s*(につき)?\s*(1|１|一)\s*(回|口)(限り|まで|のみ)?/
 
 // ロボットの版。上げると「フォームが見つからない」等でスキップした懸賞に再挑戦する
-const BOT_VERSION = 11
+const BOT_VERSION = 12
 const RETRYABLE = /フォームが見つからない|入力欄が個人情報フォームでない|必須項目が埋められない|クイズに答えられない/
 const ENTRY_LINK = /応募フォーム|応募する|申し込む|申込む|申込み|お申し込み|エントリーする|[^要規方資条]?応募$|会場に応募|に応募|応募はこちら|ご応募はこちら|応募ページ|エントリー|参加する|アンケートに(回答|答え)|アンケートはこちら|今すぐ応募|応募画面|フォームへ|応募へ|^\s*応募\s*$|ENTRY|Entry|APPLY|Apply|応募受付|応募ボタン|プレゼントに応募|キャンペーンに参加/
 const ENTRY_NG = /応募要項|応募規約(?!に同意)|応募方法|応募資格|応募条件|注意事項|当選発表|よくある|FAQ|プライバシー|試乗|来店予約|予約|資料請求|お問い?合わ?せ|購入|カート|会員登録|ログイン|ダウンロード|アプリ/
@@ -117,6 +117,7 @@ const NEXT_BTN = /確認|次へ|進む|submit/i
 
 function rank(it) {
   const a = applied[it.id]
+  if (ANSWERS[it.id] && (!a || a.ans !== ANSWERS[it.id].v)) return 0 // 回答メモを用意した懸賞を最優先
   if (!a) return 1
   if (needsReapply(a)) return 0
   if (a.status === 'fail') return 2
@@ -369,7 +370,7 @@ async function applyOne(it, reapply = false) {
       const r = await frame.evaluate(`(${filler})(${JSON.stringify(profile)})`)
       if (r.login) return { status: 'skip', reason: 'ログインが必要' }
       if (r.captcha) return { status: 'skip', reason: '画像認証あり' }
-      if (round === 0 && r.filled === 0) return { status: 'skip', reason: '入力欄が個人情報フォームでない' }
+      if (round === 0 && r.filled === 0 && !(ans?.set && /回答メモ[1-9]/.test(quizNote))) return { status: 'skip', reason: '入力欄が個人情報フォームでない' }
       if (round === 0) {
         const info = await frame.evaluate((src) => {
           const re = new RegExp(src)
@@ -407,7 +408,9 @@ async function applyOne(it, reapply = false) {
       const seen = new Set(beforeText.split('\n').map((l) => l.trim()))
       const fresh = after.split('\n').map((l) => l.trim()).filter((l) => l && !seen.has(l)).join('\n')
       trace.push(`${round}:${btn}→${new URL(p.url()).pathname.slice(0, 40)} ${mask(fresh).replace(/\s+/g, ' ').slice(0, 120)}`)
-      if (/(必須|入力してください|正しく入力|エラー|不正|不備|入力されていません|選択されていません|未入力|未選択|選択してください|ご確認ください)/.test(fresh.slice(0, 1500))) return { status: 'fail', reason: '送信時に入力エラー', trace }
+      // 確認画面（「内容をご確認ください」「お間違いがなければ〜確定」）は、未入力の任意項目が「未入力」と表示されていてもエラーではない
+      const isConfirm = /お間違いがなければ|内容をご?確認(の上|いただき|ください)|確認画面|以下の内容で|この内容で(よろしければ|送信|応募)|(応募|送信)を確定/.test(fresh.slice(0, 1500))
+      if (!isConfirm && /(必須|入力してください|正しく入力|エラー|不正|不備|入力されていません|選択されていません|未入力|未選択|選択してください|ご確認ください)/.test(fresh.slice(0, 1500))) return { status: 'fail', reason: '送信時に入力エラー', trace }
       if (DONE.test(fresh)) {
         return { status: 'applied', reason: (/メール.{0,10}(確認|認証|届|送信)/.test(fresh) ? '確認メールあり' : '') + quizNote + (hasEmail ? '' : '・メール欄なし'), trace }
       }

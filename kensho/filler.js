@@ -54,9 +54,9 @@
       return tel
     }],
     [/(pref|都道府県|region|address-level1)/i, () => P.pref],
-    [/(city|市区町村|address-level2|addr(ess)?1|住所1)/i, () => (P.city || '') + (P.addr || '')],
+    [/(city|市区町村|municipality|address-level2|addr(ess)?1|住所1)/i, (h, el) => (/municipality/i.test(el.name || '') && document.querySelector('[name$="block_number"]') ? P.city : (P.city || '') + (P.addr || ''))],
     [/(bldg|building|建物|マンション|addr(ess)?3|address-line2|住所3)/i, () => P.bldg],
-    [/(street|番地|addr(ess)?2|address-line1|住所2)/i, () => P.addr],
+    [/(street|番地|block_?number|addr(ess)?2|address-line1|住所2)/i, () => P.addr],
     [/(住所|address)/i, () => addr + (P.bldg ? ' ' + P.bldg : '')],
     [/(sei.?kana|last.?name.?kana|family.?name.?kana|セイ|せい|姓.*(カナ|かな|フリガナ|ふりがな))/i, (h) => (/カナ|カタカナ|フリガナ|kana/i.test(h) ? kata(P.seiKana) : P.seiKana)],
     [/(mei.?kana|first.?name.?kana|given.?name.?kana|メイ|めい|名.*(カナ|かな|フリガナ|ふりがな))/i, (h) => (/カナ|カタカナ|フリガナ|kana/i.test(h) ? kata(P.meiKana) : P.meiKana)],
@@ -79,7 +79,7 @@
         // 「30代」形式 or 「35歳」形式
         const dec = `${Math.floor(Number(a) / 10) * 10}代`
         const hit = (x) => [a, `${a}歳`, `${a}才`].includes((x || '').trim())
-        const o = Array.from(el.options).find((o) => hit(o.text) || hit(o.value)) || Array.from(el.options).find((o) => o.text.includes(dec) || o.value.includes(dec))
+        const o = Array.from(el.options).find((o) => hit(o.text) || hit(o.value)) || Array.from(el.options).find((o) => o.text.includes(dec) || o.value.includes(dec)) || Array.from(el.options).find((o) => o.value && ageFits(o.text))
         return o ? o.value : ''
       }
       return a
@@ -97,6 +97,63 @@
     return t
   }
   const visible = (el) => !!(el.offsetWidth || el.offsetHeight || el.getClientRects().length)
+  // 必須か：required属性のほか、項目ラベルに「必須」と書いてある形式（form.run 等）
+  // その欄だけを含む一番外側のまとまり（他の項目の入力欄を含まない範囲）
+  const baseName = (e) => (e.name || e.id || '').replace(/(_(last|first)_name(_katakana)?|_postal_code|_region|_municipality|_block_number|_building|_confirm|_fr_other_text|_other|\[\])$/, '')
+  const blockOf = (el) => {
+    let best = el.parentElement
+    let x = el.parentElement
+    for (let i = 0; x && x.parentElement && i < 10; i++) {
+      const p = x.parentElement
+      if (p.tagName === 'FORM' || p.tagName === 'BODY') break
+      const others = Array.from(p.querySelectorAll('input, select, textarea')).filter((e) => e.type !== 'hidden' && visible(e) && baseName(e) !== baseName(el))
+      if (others.length) break
+      best = p
+      x = p
+    }
+    return best
+  }
+  const isReq = (el) => {
+    if (el.required || el.getAttribute('aria-required') === 'true') return true
+    const t = (blockOf(el)?.innerText || '').replace(/\s+/g, ' ')
+    return t.length < 800 && /必須/.test(t) && !/^.{0,30}任意/.test(t)
+  }
+  // 年齢（生年月日から）に合う選択肢：「31〜40歳」「30代」「20歳以下」「71歳以上」など
+  const myAge = (() => {
+    if (P.age) return Number(P.age)
+    if (/^\d{4}-\d{1,2}-\d{1,2}$/.test(P.birth || '')) {
+      const [y, m, d] = P.birth.split('-').map(Number)
+      const now = new Date()
+      return now.getFullYear() - y - (now.getMonth() + 1 < m || (now.getMonth() + 1 === m && now.getDate() < d) ? 1 : 0)
+    }
+    return null
+  })()
+  const ageFits = (txt) => {
+    if (myAge == null) return false
+    const t = (txt || '').normalize('NFKC')
+    let m = t.match(/(\d+)\s*[〜~～\-ー－]\s*(\d+)/)
+    if (m) return myAge >= +m[1] && myAge <= +m[2]
+    if ((m = t.match(/(\d+)\s*代/))) return Math.floor(myAge / 10) * 10 === +m[1]
+    if ((m = t.match(/(\d+)\s*歳?\s*(以下|未満)/))) return m[2] === '以下' ? myAge <= +m[1] : myAge < +m[1]
+    if ((m = t.match(/(\d+)\s*歳?\s*以上/))) return myAge >= +m[1]
+    return false
+  }
+  // 選択肢グループの「設問文」：選択肢の文言より広い、最も近い親要素のテキストの先頭
+  const qText = (el, siblings) => {
+    // 選択肢の文言を全部取り除いても文字が残る親要素＝設問文を含むブロック
+    const opts = (siblings || [el]).map((e) => ((e.labels && e.labels[0]?.innerText) || e.value || '').replace(/\s+/g, ' ').trim()).filter(Boolean)
+    let x = el.parentElement
+    for (let i = 0; x && i < 10; i++, x = x.parentElement) {
+      let t = (x.innerText || '').replace(/\s+/g, ' ').trim()
+      if (t.length > 1500) break
+      for (const o of opts) t = t.split(o).join(' ')
+      t = t.replace(/\s+/g, ' ').trim()
+      if (t.length > 3) return t.slice(0, 80)
+    }
+    return ''
+  }
+  const AGE_Q = /年齢|年代|age/i
+  const JOB_Q = /職業|ご職業|occupation|job/i
   const setVal = (el, v) => {
     const proto = el instanceof HTMLSelectElement ? HTMLSelectElement.prototype : el instanceof HTMLTextAreaElement ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype
     const setter = Object.getOwnPropertyDescriptor(proto, 'value')?.set
@@ -139,7 +196,18 @@
       }
     }
     // 子ども・妊娠・年収・職業など本人の状況を表す任意項目は、適当に埋めない（事実と違う回答になるため）
-    if (PERSONAL_Q.test(`${el.name} ${el.id} ${hl.slice(0, 60)}`) && !el.required) return
+    const head = `${el.name} ${el.id} ${hl.slice(0, 60)}`
+    if (el instanceof HTMLSelectElement && AGE_Q.test(head) && Array.from(el.options).filter((o) => /\d+\s*(歳|才|代)/.test(o.text)).length >= 2) {
+      const o = Array.from(el.options).find((o) => o.value && ageFits(o.text))
+      if (o) { setVal(el, o.value); n++ } else if (isReq(el)) el.setAttribute('data-kensho-unknown', '1')
+      return
+    }
+    if (PERSONAL_Q.test(head) && !isReq(el)) return
+    if (el instanceof HTMLSelectElement && JOB_Q.test(head)) {
+      const o = Array.from(el.options).find((o) => /その他/.test(o.text))
+      if (o) { setVal(el, o.value); q++ } else el.setAttribute('data-kensho-unknown', '1')
+      return
+    }
     if (el instanceof HTMLSelectElement) {
       const opts = Array.from(el.options).filter((o) => o.value && !o.disabled && !SKIP.test(o.text))
       if (opts.length) {
@@ -173,7 +241,25 @@
   let consent = 0
   groups.forEach((els, k) => {
     if (els.some((e) => e.checked)) return
-    if (PERSONAL_Q.test(`${k} ${labelOf(els[0]).slice(0, 60)}`) && !els.some((e) => e.required)) return
+    const gl = `${k} ${qText(els[0], els)}`
+    const req = els.some((e) => isReq(e))
+    const txt = (e) => (e.labels?.[0]?.textContent || e.value || '').trim()
+    if (AGE_Q.test(gl) && !/性別/.test(gl) && els.filter((e) => /\d+\s*(歳|才|代)/.test(txt(e))).length >= 2) {
+      const c = els.find((e) => ageFits(txt(e)))
+      if (c) { c.click(); n++ } else if (req) els[0].setAttribute('data-kensho-unknown', '1')
+      return
+    }
+    if (/性別|gender|sex/i.test(gl) && !/子/.test(gl)) {
+      const c = P.gender && els.find((e) => txt(e).includes(P.gender.replace(/性$/, '')))
+      if (c) { c.click(); n++ } else if (req) { const na = els.find((e) => /無回答|回答しない|答えたくない/.test(txt(e))); na ? na.click() : els[0].setAttribute('data-kensho-unknown', '1') }
+      return
+    }
+    if (JOB_Q.test(gl) && req) {
+      const c = els.find((e) => /その他/.test(txt(e)))
+      if (c) { c.click(); q++ } else els[0].setAttribute('data-kensho-unknown', '1')
+      return
+    }
+    if (PERSONAL_Q.test(gl) && !req) return
     const t = (e) => (labelOf(e).slice(0, 60) + ' ' + e.value).trim()
     if (k.startsWith('checkbox:') && els.length < 2) {
       const e = els[0]
@@ -183,7 +269,14 @@
       }
       return
     }
-    if (els.some((e) => NO_TOUCH.test(t(e)))) return
+    if (els.some((e) => NO_TOUCH.test(t(e))) || NO_TOUCH.test(gl)) {
+      // メルマガ等の配信希望が必須なら「希望しない」を選ぶ（任意なら触らない）
+      if (req && k.startsWith('radio:')) {
+        const no = els.find((e) => /希望しない|受け取らない|不要|しない|いいえ/.test(txt(e)))
+        if (no) { no.click(); q++ }
+      }
+      return
+    }
     const c = pick(els, (e) => (e.labels?.[0]?.textContent || e.value || '').trim())
     if (c) {
       c.click()
@@ -209,6 +302,17 @@
   // 未入力の必須項目（個人情報は返さない。項目の種類だけ）
   const missing = []
   document.querySelectorAll('[data-kensho-unknown]').forEach((el) => missing.push(`${(el.name || el.id || 'age').slice(0, 20)}(不明)`))
+  // ラベルに「必須」とある項目の未回答（form.run 等）
+  const seenReq = new Set()
+  document.querySelectorAll('input, select, textarea').forEach((el) => {
+    if (!visible(el) || el.type === 'hidden' || el.disabled || seenReq.has(el.name)) return
+    if (el.required || !isReq(el) || /building|bldg|建物|_fr_other/i.test(el.name || '')) return
+    seenReq.add(el.name)
+    if (el.type === 'radio' || el.type === 'checkbox') {
+      if (el.name && document.querySelector(`input[name="${CSS.escape(el.name)}"]:checked`)) return
+    } else if (el instanceof HTMLSelectElement ? el.selectedIndex > 0 || (el.value && !el.options[0]?.text.match(/選択/)) : el.value) return
+    missing.push(`${(el.name || el.id).slice(0, 24)}(必須)`)
+  })
   document.querySelectorAll('input[required], select[required], textarea[required], [aria-required=true]').forEach((el) => {
     if (!visible(el)) return
     const type = (el.getAttribute('type') || '').toLowerCase()
