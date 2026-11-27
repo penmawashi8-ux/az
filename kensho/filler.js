@@ -163,9 +163,9 @@
       v = opt.value
     }
     setter ? setter.call(el, v) : (el.value = v)
-    el.dispatchEvent(new Event('input', { bubbles: true }))
-    el.dispatchEvent(new Event('change', { bubbles: true }))
-    el.dispatchEvent(new Event('blur', { bubbles: true }))
+    el.dispatchEvent(((t) => { const e = document.createEvent('Event'); e.initEvent(t, true, true); return e })('input'))
+    el.dispatchEvent(((t) => { const e = document.createEvent('Event'); e.initEvent(t, true, true); return e })('change'))
+    el.dispatchEvent(((t) => { const e = document.createEvent('Event'); e.initEvent(t, true, true); return e })('blur'))
     return true
   }
   let n = 0

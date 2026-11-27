@@ -171,7 +171,7 @@ export async function solveQuiz(frame, context) {
     const ok = await frame.evaluate(
       ([q, a]) => {
         const norm = (s) => (s || '').normalize('NFKC').replace(/\s+/g, '')
-        const fire = (el) => ['input', 'change', 'blur'].forEach((t) => el.dispatchEvent(new Event(t, { bubbles: true })))
+        const fire = (el) => ['input', 'change', 'blur'].forEach((t) => el.dispatchEvent(((t) => { const e = document.createEvent('Event'); e.initEvent(t, true, true); return e })(t)))
         if (q.kind === 'text') {
           const el = document.querySelector(`[data-kensho-q="${q.id}"]`)
           if (!el) return false
