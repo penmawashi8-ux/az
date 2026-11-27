@@ -1,0 +1,33 @@
+{
+  "_comment": "懸賞ごとの回答メモ。Claudeが各懸賞のページ・フォームを調べて決めた答え。キーは懸賞ID、set のキーはフォームの name 属性。値の {sei} {mei} {seiKata} {zip3} {tel1} {pref} {cityAddr} {genderShort} {ageDecade} 等は実行時にプロフィール(Secrets)から埋める。v を上げるとその懸賞に再挑戦する。",
+  "koubo_jp_contest_391555": {
+    "v": 1,
+    "note": "本間ゴルフ 都内店舗リニューアル。Q:次の節目は創業何周年？→本文『来年創立70周年』→70。賞品は当選数の多いB賞(70名)",
+    "quizDone": true,
+    "set": { "quiz": "70", "prizeChoice": "B賞", "check1": true, "check2": true, "check3": true }
+  },
+  "koubo_jp_contest_386434": {
+    "v": 1,
+    "note": "九都県市 省エネ・3Rキャンペーン。氏名・フリガナ・郵便番号・電話が分割欄のため個別に指定。賞品は9(ヤマザキ菓子詰め合わせ)、知ったきっかけはE(自治体HP)",
+    "set": {
+      "vl001": "{sei}", "vl035": "{mei}", "vl002": "{seiKata}", "vl036": "{meiKata}",
+      "vl021[]": "{genderShort}", "vl023": "{ageDecade}",
+      "vl004": "{zip3}", "vl005": "{zip4}", "vl006": "{pref}", "vl007": "{cityAddr}", "vl008": "{bldg}",
+      "vl010": "{tel1}", "vl011": "{tel2}", "vl012": "{tel3}",
+      "vl025": "9.山崎製パン", "vl026[]": "E. 各自治体"
+    }
+  },
+  "koubo_jp_contest_387229": {
+    "v": 1,
+    "retryUnknown": true,
+    "note": "ハッピーノート。希望プレゼントを番号で5つ（未入力で弾かれていた）。掲載順で当選数の多い食品・日用品(9〜12,15)を選択",
+    "set": {
+      "ご希望のプレゼントNo.1": "9", "ご希望のプレゼントNo.2": "12", "ご希望のプレゼントNo.3": "11",
+      "ご希望のプレゼントNo.4": "10", "ご希望のプレゼントNo.5": "15"
+    }
+  },
+  "koubo_jp_contest_407387": {
+    "v": 1,
+    "skip": "勤務先・役職などの入力が必要な法人向けの資料請求型（Sansan）のため応募しない"
+  }
+}

@@ -44,11 +44,67 @@ const applied = fs.existsSync(APPLIED) ? JSON.parse(fs.readFileSync(APPLIED, 'ut
 const REAPPLY = fs.existsSync(path.join(DIR, 'reapply.json')) ? JSON.parse(fs.readFileSync(path.join(DIR, 'reapply.json'), 'utf8')) : null
 const needsReapply = (a) =>
   !!REAPPLY && ['applied', 'unknown'].includes(a.status) && a.at < REAPPLY.before && !(a.reapplied || []).includes(REAPPLY.tag)
+// 懸賞ごとの回答メモ（Claudeが各ページを調べて決めた答え）。値の {sei} 等はプロフィールから埋める
+const ANSWERS = fs.existsSync(path.join(DIR, 'answers.json')) ? JSON.parse(fs.readFileSync(path.join(DIR, 'answers.json'), 'utf8')) : {}
+function placeholders() {
+  const P = {}
+  for (const [k, v] of Object.entries(profile)) P[k] = typeof v === 'string' ? v.normalize('NFKC').trim() : v
+  const zip = (P.zip || '').replace(/\D/g, '')
+  const tel = (P.tel || '').replace(/\D/g, '')
+  const t3 = tel.length === 11 ? [tel.slice(0, 3), tel.slice(3, 7), tel.slice(7)] : [tel.slice(0, 2), tel.slice(2, 6), tel.slice(6)]
+  const kata = (x) => (x || '').replace(/[\u3041-\u3096]/g, (c) => String.fromCharCode(c.charCodeAt(0) + 0x60))
+  let age = P.age ? String(P.age) : ''
+  if (!age && /^\d{4}-\d{1,2}-\d{1,2}$/.test(P.birth || '')) {
+    const [y, m, d] = P.birth.split('-').map(Number)
+    const now = new Date()
+    age = String(now.getFullYear() - y - (now.getMonth() + 1 < m || (now.getMonth() + 1 === m && now.getDate() < d) ? 1 : 0))
+  }
+  return {
+    sei: P.sei, mei: P.mei, name: `${P.sei || ''}${P.mei || ''}`, seiKana: P.seiKana, meiKana: P.meiKana,
+    seiKata: kata(P.seiKana), meiKata: kata(P.meiKana), email: P.email, zip, zip3: zip.slice(0, 3), zip4: zip.slice(3),
+    tel, tel1: t3[0], tel2: t3[1], tel3: t3[2], pref: P.pref, city: P.city, addr: P.addr, cityAddr: `${P.city || ''}${P.addr || ''}`,
+    bldg: P.bldg, gender: P.gender, genderShort: (P.gender || '').replace(/性$/, ''), age, ageDecade: age ? `${Math.floor(Number(age) / 10) * 10}代` : '',
+  }
+}
+const PH = placeholders()
+const fillPH = (v) => String(v).replace(/\{(\w+)\}/g, (_, k) => PH[k] ?? '')
+
+/** 回答メモの値をフォームに入れる（キーは name 属性。select は文言/値の一致、radio/checkbox は値や文言を含むものを選ぶ） */
+async function applyAnswers(frame, set) {
+  const res = await frame.evaluate((entries) => {
+    let ok = 0
+    const fire = (el) => ['input', 'change', 'blur'].forEach((t) => el.dispatchEvent(new Event(t, { bubbles: true })))
+    const label = (el) => ((el.labels && el.labels[0]?.innerText) || el.parentElement?.innerText || '').trim()
+    for (const [name, val] of entries) {
+      if (val === '') continue
+      const els = Array.from(document.querySelectorAll(`[name="${CSS.escape(name)}"]`))
+      if (!els.length) continue
+      const el = els[0]
+      if (el.tagName === 'SELECT') {
+        const opt = Array.from(el.options).find((o) => o.value === val || o.text.trim() === val) || Array.from(el.options).find((o) => o.value && (o.text.includes(val) || o.value.includes(val)))
+        if (opt) { el.value = opt.value; fire(el); ok++ }
+      } else if (el.type === 'radio' || el.type === 'checkbox') {
+        const vals = Array.isArray(val) ? val : [val]
+        for (const v of vals) {
+          const t = els.find((e) => (v === true && e.type === 'checkbox') || e.value === v || label(e) === v) || els.find((e) => typeof v === 'string' && (e.value.includes(v) || label(e).includes(v)))
+          if (t && !t.checked) { t.click(); ok++ }
+        }
+      } else {
+        const setter = Object.getOwnPropertyDescriptor(el instanceof HTMLTextAreaElement ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype, 'value')?.set
+        setter ? setter.call(el, val) : (el.value = val)
+        fire(el); ok++
+      }
+    }
+    return ok
+  }, Object.entries(set).map(([k, v]) => [k, Array.isArray(v) ? v.map((x) => (typeof x === 'string' ? x : x)) : typeof v === 'string' ? v : v]))
+  return res
+}
+
 // 規約で重複応募が禁止されている（＝再応募すると無効になりうる）
 const NO_DUP = /(重複|複数回|二重|同一人物|同一の方)[^。]{0,25}(応募|エントリー)?[^。]{0,25}(無効|禁止|不可|できません|お断り|認め|対象外|取り消)|(お?一人様?|おひとり様?|1人|１人|お一人)\s*(につき)?\s*(1|１|一)\s*(回|口)(限り|まで|のみ)?/
 
 // ロボットの版。上げると「フォームが見つからない」等でスキップした懸賞に再挑戦する
-const BOT_VERSION = 10
+const BOT_VERSION = 11
 const RETRYABLE = /フォームが見つからない|入力欄が個人情報フォームでない|必須項目が埋められない|クイズに答えられない/
 const ENTRY_LINK = /応募フォーム|応募する|申し込む|申込む|申込み|お申し込み|エントリーする|[^要規方資条]?応募$|会場に応募|に応募|応募はこちら|ご応募はこちら|応募ページ|エントリー|参加する|アンケートに(回答|答え)|アンケートはこちら|今すぐ応募|応募画面|フォームへ|応募へ|^\s*応募\s*$|ENTRY|Entry|APPLY|Apply|応募受付|応募ボタン|プレゼントに応募|キャンペーンに参加/
 const ENTRY_NG = /応募要項|応募規約(?!に同意)|応募方法|応募資格|応募条件|注意事項|当選発表|よくある|FAQ|プライバシー|試乗|来店予約|予約|資料請求|お問い?合わ?せ|購入|カート|会員登録|ログイン|ダウンロード|アプリ/
@@ -71,6 +127,9 @@ const targets = data.items
     if (!it.webOpen || !it.entryUrl) return false
     const a = applied[it.id]
     if (!a) return true
+    // 回答メモが追加・更新された懸賞は、送信済みでなければもう一度挑戦
+    const A = ANSWERS[it.id]
+    if (A && a.ans !== A.v && (!['applied', 'unknown'].includes(a.status) || A.retryUnknown)) return true
     if (needsReapply(a)) return true
     if (a.status === 'fail') return (a.tries || 1) < 3 || (a.v || 1) < BOT_VERSION
     if (a.status === 'skip') return RETRYABLE.test(a.reason || '') && (a.v || 1) < BOT_VERSION
@@ -238,7 +297,9 @@ async function applyOne(it, reapply = false) {
   const page = await ctx.newPage()
   page.on('dialog', (d) => d.accept().catch(() => {}))
   try {
-    await page.goto(it.entryUrl, { waitUntil: 'domcontentloaded', timeout: 30000 })
+    const ans = ANSWERS[it.id]
+    if (ans?.skip) return { status: 'skip', reason: ans.skip }
+    await page.goto(ans?.url || it.entryUrl, { waitUntil: 'domcontentloaded', timeout: 30000 })
     await page.waitForLoadState('networkidle', { timeout: 8000 }).catch(() => {})
     const landing = await pageText(page) // クイズの答え探し用（キャンペーン本文）
     const found = await findForm(page)
@@ -270,12 +331,38 @@ async function applyOne(it, reapply = false) {
     if (risk) return { status: 'skip', reason: `安全のため応募せず(${risk})` }
     if (reapply && NO_DUP.test(`${landing}\n${text}`)) return { status: 'keep', reason: '規約で重複応募禁止のため再応募せず' }
 
+    if (process.env.KENSHO_DUMP) {
+      // 調査用：フォームの項目（名前・種類・ラベル・選択肢）と本文を出力（値は出さない）
+      const fields = await frame.evaluate(() =>
+        Array.from(document.querySelectorAll('input, select, textarea'))
+          .filter((e) => !['hidden', 'submit', 'button', 'image'].includes(e.type) && (e.offsetWidth || e.offsetHeight))
+          .map((e) => {
+            const box = e.closest('tr, dl, li, fieldset, p, .form-group, div')
+            return {
+              n: e.name || e.id,
+              t: e.tagName === 'SELECT' ? 'select' : e.type,
+              req: e.required || e.getAttribute('aria-required') === 'true',
+              v: e.type === 'radio' || e.type === 'checkbox' ? e.value : undefined,
+              lab: ((e.labels && e.labels[0]?.innerText) || box?.innerText || '').replace(/\s+/g, ' ').trim().slice(0, 90),
+              opts: e.tagName === 'SELECT' ? Array.from(e.options).map((o) => `${o.value}=${o.text.trim()}`).slice(0, 12) : undefined,
+            }
+          }),
+      )
+      console.log('   url', frame.url())
+      console.log('   fields', JSON.stringify(fields, null, 0))
+      console.log('   text', `${landing}\n${text}`.replace(/\s+/g, ' ').slice(0, 2500))
+    }
     let quizNote = ''
     for (let round = 0; round < 4; round++) {
-      if (round === 0) {
+      if (round === 0 && ans?.set) {
+        const set = Object.fromEntries(Object.entries(ans.set).map(([k, v]) => [k, typeof v === 'string' ? fillPH(v) : v]))
+        const n = await applyAnswers(frame, set)
+        quizNote += `・回答メモ${n}項目`
+      }
+      if (round === 0 && !ans?.quizDone) {
         const qz = await solveQuiz(frame, `${landing}\n${text}`)
         if (qz.asked) {
-          quizNote = `・クイズ${qz.answered}/${qz.asked}(${qz.via})`
+          quizNote += `・クイズ${qz.answered}/${qz.asked}(${qz.via})`
           if (qz.answered < qz.asked) return { status: 'skip', reason: `クイズに答えられない(${qz.answered}/${qz.asked})` }
         }
       }
@@ -371,6 +458,7 @@ for (const it of targets) {
       host,
       at: new Date().toISOString(),
       v: BOT_VERSION,
+      ans: ANSWERS[it.id]?.v,
       tries: (applied[it.id]?.tries || 0) + 1,
       // 履歴表示用（締切後に一覧から消えても残るように）
       title: it.title,
