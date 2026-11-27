@@ -113,10 +113,34 @@ function defaultPostText(it: Item): string {
   let body = '素敵なキャンペーンありがとうございます！応募します。当たったら嬉しいです。'
   if (/欲しい|どれ|希望/.test(p) && prize) body = `${prize}が欲しいです！ぜひ当たりますように。`
   else if (/感想|好き|楽しみ|応援/.test(p)) body = 'いつも楽しみにしています！これからも応援しています。'
-  // 指定された文言（例：「これからもローソンプリント」）は必ず先頭に入れる
-  const phrases = (it.xPhrases || []).join('\n')
+  // 指定された文言（例：「これからもローソンプリント」）は必ず先頭に入れる。
+  // ただし「忘れられない思い出の曲」のような“お題”は、その言葉ではなく答えを書く
+  const lines: string[] = []
+  for (const ph of it.xPhrases || []) {
+    const ans = topicAnswer(ph)
+    if (ans) {
+      lines.push(ans)
+      body = '素敵なキャンペーンありがとうございます！'
+    } else lines.push(ph)
+  }
   const tags = (it.xTags || []).join(' ')
-  return [phrases, body, tags].filter(Boolean).join('\n')
+  return [lines.join('\n'), body, tags].filter(Boolean).join('\n')
+}
+
+/** 「〜の曲」「好きな〜」のようなお題に対する回答例（null ならお題ではなく、そのまま入れる指定の文言） */
+function topicAnswer(ph: string): string | null {
+  const p = ph.replace(/\s+/g, '')
+  if (!/(曲|歌|ソング|映画|本|作品|料理|メニュー|食べ物|食べたい.*|行きたい.*|場所|思い出|エピソード|理由|色|キャラ.*|推し.*|好きな.*|欲しい.*|願い|目標|夢)$/.test(p)) return null
+  if (/曲|歌|ソング/.test(p)) return 'スピッツの「チェリー」です。学生時代によく聴いていて、今でも聴くとその頃を思い出します。'
+  if (/映画/.test(p)) return '「千と千尋の神隠し」です。何度観ても新しい発見があります。'
+  if (/本|作品/.test(p)) return '「ハリー・ポッター」シリーズです。夢中になって読みました。'
+  if (/料理|メニュー|食べ物|食べたい/.test(p)) return '家族で囲む鍋料理です。寒い日には特においしいです。'
+  if (/行きたい|場所/.test(p)) return '北海道です。冬の景色とおいしいものを楽しみたいです。'
+  if (/色/.test(p)) return '青です。見ていると落ち着きます。'
+  if (/欲しい/.test(p)) return 'ぜひ当たってほしいです！'
+  if (/願い|目標|夢/.test(p)) return '家族みんなが元気に過ごせることです。'
+  if (/思い出|エピソード|理由/.test(p)) return '家族で出かけた旅行が一番の思い出です。'
+  return null
 }
 
 /**
