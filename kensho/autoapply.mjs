@@ -434,7 +434,7 @@ async function applyOne(it, reapply = false) {
         const nb = await frame.evaluate(([okSrc, nextSrc]) => {
           const ok = new RegExp(okSrc), next = new RegExp(nextSrc, 'i')
           const txt = (b) => (b.value || b.textContent || b.alt || '').replace(/\s+/g, '')
-          const b = Array.from(document.querySelectorAll('button, input[type=submit], input[type=button], a')).find((b) => (b.offsetWidth || b.offsetHeight) && next.test(txt(b)) && !ok.test(txt(b)) && txt(b).length < 20)
+          const b = Array.from(document.querySelectorAll('form button, form input[type=submit], form input[type=button], form input[type=image], form a[href^="javascript:" i]')).find((b) => (b.offsetWidth || b.offsetHeight) && next.test(txt(b)) && !ok.test(txt(b)) && txt(b).length < 20)
           if (!b) return null
           b.click(); return txt(b)
         }, [SUBMIT_BTN.source, /確認|次へ|進む/.source]).catch(() => null)

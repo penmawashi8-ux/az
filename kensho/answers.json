@@ -236,5 +236,53 @@
     "v": 1,
     "note": "ヴィッセル神戸ヤリス。SPIRALのフォームで郵便番号(:a/:t)・電話(:a/:e/:n)の分割欄に入らず『入力必須です』で返されていた。filler の修正後に再挑戦",
     "set": {}
+  },
+  "koubo_jp_contest_387235": {
+    "v": 1,
+    "quizDone": true,
+    "note": "オーブンレンジの日(日本電機工業会)。3択5問はキャンペーンページの本文から：Q1 耐熱性のないガラス容器(C) Q2 庫内をこまめに掃除(A) Q3 油を使わず揚げ物のような仕上がり(A) Q4 オーブンレンジの日(A) Q5 センサーで自動あたため(A)。希望メーカーはシャープ",
+    "url": "https://form.qubo.jp/ovenrenjinohi2026",
+    "set": {
+      "parts.ceb7ccfe-0e30-4869-9942-6176e5fc6750.value.input": "C. 耐熱性のないガラス容器",
+      "parts.eb96f0a2-d1dd-420f-9150-f2ed83c52e38.value.input": "A. 庫内をこまめに掃除する",
+      "parts.13b02d54-553e-437a-9742-0c4452684da6.value.input": "A. 油を使わずに揚げ物のような仕上がりになる",
+      "parts.590432cc-6a03-40ac-bf1c-6b5a16ea93ba.value.input": "A. オーブンレンジの日",
+      "parts.3b23dea7-d953-4ec9-919c-3edaafc4a8b5.value.input": "A. センサーで自動あたため",
+      "parts.204df2b7-c8ad-47ed-b2bc-77661ddd14b2.value.input": "A. シャープ",
+      "parts.079a7e65-0ca9-496b-b857-e2484223702c.value.firstName": "{sei}",
+      "parts.079a7e65-0ca9-496b-b857-e2484223702c.value.lastName": "{mei}",
+      "parts.c62d1467-4b36-420c-9ed7-b1b536adcb3d.value.firstName": "{seiKata}",
+      "parts.c62d1467-4b36-420c-9ed7-b1b536adcb3d.value.lastName": "{meiKata}",
+      "parts.6a67c45a-5cd4-4739-ad10-d939bc96f941.value.input": "{gender}",
+      "parts.6523eeef-275e-45ad-84ea-0328bf948229.value": "{age}",
+      "parts.c77f085c-0cd9-4343-a166-b0d137a84c36.value.postalCode": "{zip}",
+      "parts.c77f085c-0cd9-4343-a166-b0d137a84c36.value.prefecture": "{pref}",
+      "parts.c77f085c-0cd9-4343-a166-b0d137a84c36.value.districtAddress": "{cityAddr}",
+      "parts.c77f085c-0cd9-4343-a166-b0d137a84c36.value.building": "{bldg}",
+      "parts.36bfcc10-2d79-47b4-b7c1-d8e7f11b2ca2.value": "{tel}",
+      "parts.2b8af1c4-a992-4e23-84ed-1f2fae410861.value": "{email}",
+      "parts.2b8af1c4-a992-4e23-84ed-1f2fae410861.retypeEmail": "{email}"
+    }
+  },
+  "koubo_jp_contest_399112": {
+    "v": 1,
+    "quizDone": true,
+    "note": "ホテルエピナール那須プレゼントクイズ11月。ヒントページで確認：Q1 忘新年会の鍋5種に麻辣湯鍋(B)、Q2 エクラ・ド・ルージュ(C)、Q3 新登場はプレミアム“生”おせち(A)。メール希望は『希望しない』",
+    "url": "https://www.epinard.jp/presentquiz/",
+    "set": {
+      "第1問回答": "B",
+      "第2問回答": "C",
+      "第3問回答": "A",
+      "氏名": "{sei} {mei}",
+      "フリガナ": "{seiKata} {meiKata}",
+      "誕生年": "{birthYear}",
+      "郵便番号1": "{zip3}",
+      "郵便番号2": "{zip4}",
+      "県名": "{pref}",
+      "住所": "{cityAddr}{bldg}",
+      "電話番号": "{tel}",
+      "メールアドレス": "{email}",
+      "メールの希望": "希望しない"
+    }
   }
 }

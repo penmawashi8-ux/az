@@ -35,7 +35,7 @@ FEEDS = [
     ("atpress", "https://www.atpress.ne.jp/rss/index.rdf"),
 ]
 # 解析ルールの版。上げると収集済みの懸賞も次回以降に読み直す
-PARSE_VERSION = 6
+PARSE_VERSION = 7
 
 KEYWORD_PAGES = [
     # チャンスイット：応募先へのリンク(jump.srv)は robots.txt でロボット禁止なので、
@@ -516,7 +516,7 @@ def is_excluded(item: dict) -> bool:
 KOUBO_LABELS = ["締切日", "主催者", "賞", "応募資格", "主催者サイト", "募集内容", "応募方法/応募先",
                 "応募時の会員登録", "募集期間", "諸権利", "出典:"]
 SNS_HOST_RE = re.compile(r"^https?://(?:www\.|mobile\.)?(?:x|twitter|instagram|tiktok|facebook|youtube|line)\.(?:com|me)/|^https?://lin\.ee/")
-WEB_ENTRY_RE = re.compile(r"応募フォーム|フォーム|WEB|Web|ウェブ|特設サイト|キャンペーンサイト|アンケート|専用ページ|サイト(?:から|より|内)")
+WEB_ENTRY_RE = re.compile(r"応募フォーム|フォーム|WEB|Web|ウェブ|特設サイト|キャンペーンサイト|アンケート|専用ページ|サイト(?:から|より|内)|応募する|応募ボタン|応募ページ|応募バナー|キャンペーンページ|特設ページ|エントリー(?:ページ|フォーム|ボタン)?|クイズに(?:回答|答え)")
 
 
 def analyze_koubo(cand: dict, page: str) -> dict | None:
@@ -595,8 +595,8 @@ def analyze_koubo(cand: dict, page: str) -> dict | None:
         # 会員登録不要・Webフォームで応募・購入/郵送/来店なし → 自動応募の対象
         # ハガキ「または」Webで応募できるものはWebで応募する（ハガキだけ・購入・来店が必要なものは除く）
         "webOpen": (member.startswith("不要") and "form" in methods and not sns_only
-                    and not ({"purchase", "visit"} & set(methods))
-                    and not re.search(r"アプリ(を|内|から|で)|会員登録|ログイン|メンバー登録", how)),
+                    and not ({"purchase", "visit", "line"} & set(methods))
+                    and not re.search(r"アプリ(を|内|から|で)|会員登録|ログイン|メンバー登録|会員番号|ID(を|で|の)?(取得|登録|連携)|友だち(追加|登録)", how)),
         "pv": PARSE_VERSION,
         "addedAt": dt.datetime.now(JST).isoformat(timespec="seconds"),
     }
