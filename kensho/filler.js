@@ -1,7 +1,7 @@
 // ブラウザ内で実行するフォーム入力関数（autoapply.mjs から page.evaluate で呼ぶ）。
 // 画面のブックマークレット（components/KenshoList.tsx）と同じ判定ルール。
 // 戻り値には個人情報を含めない（ログに出るため）。
-;(P0) => {
+;async (P0) => {
   // 全角数字・全角英字（ＩＭＥで入力したプロフィール）を半角に揃える
   const P = {}
   for (const [k, v] of Object.entries(P0 || {})) P[k] = typeof v === 'string' ? v.normalize('NFKC').trim() : v
@@ -180,6 +180,9 @@
     const hl = h + ' ' + labelOf(el)
     const FREE = /感想|理由|意見|コメント|メッセージ|ご要望|自由|エピソード|思い出|ひと言|一言|お聞かせ|教えて|message|comment|\bmsg\b/i
     const own = `${el.name} ${el.id} ${el.getAttribute('placeholder') || ''} ${(el.labels && el.labels[0]?.innerText) || ''} ${el.parentElement && el.parentElement.querySelectorAll('input, textarea, select').length === 1 ? el.parentElement.textContent.slice(0, 40) : ''}`
+    // 「その他（自由回答）」の詳細欄は、その他を選んだときだけ後で埋める（選んでいないのに書くとエラーになる）
+    const near = (el.parentElement?.innerText || '').replace(/\s+/g, ' ').slice(0, 30)
+    if (!(el instanceof HTMLSelectElement) && /その他|other/i.test(`${el.name} ${el.id} ${own} ${near}`)) return
     const isFree = FREE.test(own) || FREE.test(hl.slice(0, 120))
     if (!(isFree && (el instanceof HTMLTextAreaElement || FREE.test(own)))) {
       // 欄そのものの name/id/ラベルで決まるルールを優先し、なければ周辺の文言で判断する
@@ -214,7 +217,8 @@
         setVal(el, opts[Math.floor(opts.length / 2)].value)
         q++
       }
-    } else if (el instanceof HTMLTextAreaElement || isFree) {
+    } else if (isFree || (el instanceof HTMLTextAreaElement && isReq(el))) {
+      // 感想・メッセージ等の自由記述、または必須のテキストエリアだけ定型文を入れる（任意の「よく使うお店」等には書かない）
       if (setVal(el, comment)) q++
     }
   })
@@ -298,6 +302,15 @@
       c.click()
       consent++
     }
+  })
+  // 「その他」を選んだ選択肢の詳細欄（その他を選ばせた場合のみ）を埋める
+  await new Promise((r) => setTimeout(r, 400)) // 「その他」を選ぶと詳細欄が後から表示されるので待つ
+  document.querySelectorAll('input[type=radio]:checked, input[type=checkbox]:checked').forEach((r) => {
+    const t = ((r.labels && r.labels[0]?.innerText) || r.value || '').trim()
+    if (!/その他/.test(t)) return
+    const box = blockOf(r)
+    const other = Array.from((box || document).querySelectorAll('input[type=text], textarea')).find((e) => visible(e) && !e.value && (/other|その他/i.test(e.name || '') || box))
+    if (other && setVal(other, 'その他')) q++
   })
   // 未入力の必須項目（個人情報は返さない。項目の種類だけ）
   const missing = []

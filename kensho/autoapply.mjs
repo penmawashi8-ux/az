@@ -110,7 +110,7 @@ async function applyAnswers(frame, set) {
 const NO_DUP = /(重複|複数回|二重|同一人物|同一の方)[^。]{0,25}(応募|エントリー)?[^。]{0,25}(無効|禁止|不可|できません|お断り|認め|対象外|取り消)|(お?一人様?|おひとり様?|1人|１人|お一人)\s*(につき)?\s*(1|１|一)\s*(回|口)(限り|まで|のみ)?/
 
 // ロボットの版。上げると「フォームが見つからない」等でスキップした懸賞に再挑戦する
-const BOT_VERSION = 12
+const BOT_VERSION = 13
 const RETRYABLE = /フォームが見つからない|入力欄が個人情報フォームでない|必須項目が埋められない|クイズに答えられない/
 const ENTRY_LINK = /応募フォーム|応募する|申し込む|申込む|申込み|お申し込み|エントリーする|[^要規方資条]?応募$|会場に応募|に応募|応募はこちら|ご応募はこちら|応募ページ|エントリー|参加する|アンケートに(回答|答え)|アンケートはこちら|今すぐ応募|応募画面|フォームへ|応募へ|^\s*応募\s*$|ENTRY|Entry|APPLY|Apply|応募受付|応募ボタン|プレゼントに応募|キャンペーンに参加/
 const ENTRY_NG = /応募要項|応募規約(?!に同意)|応募方法|応募資格|応募条件|注意事項|当選発表|よくある|FAQ|プライバシー|試乗|来店予約|予約|資料請求|お問い?合わ?せ|購入|カート|会員登録|ログイン|ダウンロード|アプリ/
@@ -421,7 +421,7 @@ async function applyOne(it, reapply = false) {
       if ((doneUrl || DONE.test(fresh)) && !/(入力してください|入力されていません|正しく入力|不備|エラーが発生)/.test(fresh.slice(0, 800))) {
         return { status: 'applied', reason: (/メール.{0,10}(確認|認証|届|送信)/.test(fresh) ? '確認メールあり' : '') + quizNote + (hasEmail ? '' : '・メール欄なし'), trace }
       }
-      if (!isConfirm && /(必須|入力してください|正しく入力|エラー|不正|不備|入力されていません|選択されていません|未入力|未選択|選択してください)/.test(fresh.slice(0, 1500))) return { status: 'fail', reason: '送信時に入力エラー', trace }
+      if (!isConfirm && /(必須|入力してください|正しく入力|エラー|不正|不備|入力されていません|選択されていません|未入力|未選択|選択してください|入力しないでください|チェックを入れ)/.test(fresh.slice(0, 1500))) return { status: 'fail', reason: '送信時に入力エラー', trace }
       if (DONE.test(fresh)) {
         return { status: 'applied', reason: (/メール.{0,10}(確認|認証|届|送信)/.test(fresh) ? '確認メールあり' : '') + quizNote + (hasEmail ? '' : '・メール欄なし'), trace }
       }
