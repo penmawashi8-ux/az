@@ -320,7 +320,7 @@ async function applyOne(it, reapply = false) {
       const seen = new Set(beforeText.split('\n').map((l) => l.trim()))
       const fresh = after.split('\n').map((l) => l.trim()).filter((l) => l && !seen.has(l)).join('\n')
       trace.push(`${round}:${btn}→${new URL(p.url()).pathname.slice(0, 40)} ${mask(fresh).replace(/\s+/g, ' ').slice(0, 120)}`)
-      if (/(必須|入力してください|正しく入力|エラー|不正)/.test(fresh.slice(0, 1500))) return { status: 'fail', reason: '送信時に入力エラー', trace }
+      if (/(必須|入力してください|正しく入力|エラー|不正|不備|入力されていません|選択されていません|未入力|未選択|選択してください|ご確認ください)/.test(fresh.slice(0, 1500))) return { status: 'fail', reason: '送信時に入力エラー', trace }
       if (DONE.test(fresh)) {
         return { status: 'applied', reason: (/メール.{0,10}(確認|認証|届|送信)/.test(fresh) ? '確認メールあり' : '') + quizNote + (hasEmail ? '' : '・メール欄なし'), trace }
       }
