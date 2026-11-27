@@ -44,6 +44,12 @@ const applied = fs.existsSync(APPLIED) ? JSON.parse(fs.readFileSync(APPLIED, 'ut
 const REAPPLY = fs.existsSync(path.join(DIR, 'reapply.json')) ? JSON.parse(fs.readFileSync(path.join(DIR, 'reapply.json'), 'utf8')) : null
 const needsReapply = (a) =>
   !!REAPPLY && ['applied', 'unknown'].includes(a.status) && a.at < REAPPLY.before && !(a.reapplied || []).includes(REAPPLY.tag)
+// 記録の手動訂正（例：実際は応募済みなのに失敗と記録された懸賞）。二重応募を防ぐため最初に反映する
+const OVERRIDES = fs.existsSync(path.join(DIR, 'overrides.json')) ? JSON.parse(fs.readFileSync(path.join(DIR, 'overrides.json'), 'utf8')) : {}
+for (const [id, ov] of Object.entries(OVERRIDES)) {
+  if (id.startsWith('_')) continue
+  if (!applied[id] || applied[id].overridden !== ov.v) applied[id] = { ...(applied[id] || {}), ...ov, overridden: ov.v }
+}
 // 懸賞ごとの回答メモ（Claudeが各ページを調べて決めた答え）。値の {sei} 等はプロフィールから埋める
 const ANSWERS = fs.existsSync(path.join(DIR, 'answers.json')) ? JSON.parse(fs.readFileSync(path.join(DIR, 'answers.json'), 'utf8')) : {}
 function placeholders() {
@@ -410,7 +416,12 @@ async function applyOne(it, reapply = false) {
       trace.push(`${round}:${btn}→${new URL(p.url()).pathname.slice(0, 40)} ${mask(fresh).replace(/\s+/g, ' ').slice(0, 120)}`)
       // 確認画面（「内容をご確認ください」「お間違いがなければ〜確定」）は、未入力の任意項目が「未入力」と表示されていてもエラーではない
       const isConfirm = /お間違いがなければ|内容をご?確認(の上|いただき|ください)|確認画面|以下の内容で|この内容で(よろしければ|送信|応募)|(応募|送信)を確定/.test(fresh.slice(0, 1500))
-      if (!isConfirm && /(必須|入力してください|正しく入力|エラー|不正|不備|入力されていません|選択されていません|未入力|未選択|選択してください|ご確認ください)/.test(fresh.slice(0, 1500))) return { status: 'fail', reason: '送信時に入力エラー', trace }
+      // 完了ページ（thanks/complete 等への遷移＋お礼の文言）は、「メールで確認」等の文言があっても完了とみなす
+      const doneUrl = /thank|complete|finish|done|kanryo|end\.(php|html)/i.test(new URL(p.url()).pathname) && p.url() !== before
+      if ((doneUrl || DONE.test(fresh)) && !/(入力してください|入力されていません|正しく入力|不備|エラーが発生)/.test(fresh.slice(0, 800))) {
+        return { status: 'applied', reason: (/メール.{0,10}(確認|認証|届|送信)/.test(fresh) ? '確認メールあり' : '') + quizNote + (hasEmail ? '' : '・メール欄なし'), trace }
+      }
+      if (!isConfirm && /(必須|入力してください|正しく入力|エラー|不正|不備|入力されていません|選択されていません|未入力|未選択|選択してください)/.test(fresh.slice(0, 1500))) return { status: 'fail', reason: '送信時に入力エラー', trace }
       if (DONE.test(fresh)) {
         return { status: 'applied', reason: (/メール.{0,10}(確認|認証|届|送信)/.test(fresh) ? '確認メールあり' : '') + quizNote + (hasEmail ? '' : '・メール欄なし'), trace }
       }
