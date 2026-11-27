@@ -21,6 +21,7 @@ type Item = {
   xTags?: string[]
   xPrompt?: string
   xPhrases?: string[]
+  xAnswer?: string
   xFollows?: string[]
   xImageTag?: boolean
   webOpen?: boolean
@@ -108,6 +109,12 @@ const isX = (it: Item) => it.methods.includes('x') && !!xPostOf(it)
 
 /** 返信・引用用の文面（指定ハッシュタグ付き）。欲しい商品を聞かれていれば賞品名を入れる */
 function defaultPostText(it: Item): string {
+  // Claude が用意した回答文があればそれを使う（ハッシュタグは足りなければ付け足す）
+  if (it.xAnswer) {
+    const missing = (it.xTags || []).filter((t) => !it.xAnswer!.includes(t.replace(/^#/, '')))
+    const fixed = (it.xPhrases || []).filter((ph) => !topicAnswer(ph) && !isQuestion(ph) && !it.xAnswer!.includes(ph))
+    return [fixed.join('\n'), it.xAnswer, missing.join(' ')].filter(Boolean).join('\n')
+  }
   const p = it.xPrompt || ''
   const prize = it.prizeShort ? it.prizeShort.replace(/^[「『]|[」』]$/g, '') : ''
   let body = '素敵なキャンペーンありがとうございます！応募します。当たったら嬉しいです。'
@@ -117,7 +124,7 @@ function defaultPostText(it: Item): string {
   // ただし「忘れられない思い出の曲」のような“お題”は、その言葉ではなく答えを書く
   const lines: string[] = []
   for (const ph of it.xPhrases || []) {
-    const ans = topicAnswer(ph)
+    const ans = topicAnswer(ph) || (isQuestion(ph) ? `${ph.replace(/[?？]\s*$/, '')}…${it.prizeShort ? `${it.prizeShort.replace(/^[「『]|[」』]$/g, '')}が当たったら大切に使いたいです！` : '楽しみにしています！'}` : null)
     if (ans) {
       lines.push(ans)
       body = '素敵なキャンペーンありがとうございます！'
@@ -125,6 +132,11 @@ function defaultPostText(it: Item): string {
   }
   const tags = (it.xTags || []).join(' ')
   return [lines.join('\n'), body, tags].filter(Boolean).join('\n')
+}
+
+/** 「〜何をしたい？」のような質問形のお題 */
+function isQuestion(ph: string): boolean {
+  return /[?？]\s*$|何を|どこ|だれ|誰と|いつ|どんな|どれ|教えて/.test(ph)
 }
 
 /** 「〜の曲」「好きな〜」のようなお題に対する回答例（null ならお題ではなく、そのまま入れる指定の文言） */

@@ -822,6 +822,18 @@ def main() -> int:
         it["score"] = score(it)
     alive.sort(key=lambda x: (-x["score"], x.get("deadline") or "9999"))
 
+    # お題に答える返信・引用の文面（Claude が作成した x_answers.json）を載せる
+    try:
+        with open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "x_answers.json"), encoding="utf-8") as f:
+            xa = json.load(f)
+    except (OSError, ValueError):
+        xa = {}
+    for it in alive:
+        if isinstance(xa.get(it["id"]), str):
+            it["xAnswer"] = xa[it["id"]]
+        else:
+            it.pop("xAnswer", None)
+
     save_json(DATA_PATH, {
         "updatedAt": dt.datetime.now(JST).isoformat(timespec="seconds"),
         "methodLabels": METHOD_LABEL,
