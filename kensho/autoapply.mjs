@@ -70,6 +70,7 @@ function placeholders() {
     seiKata: kata(P.seiKana), meiKata: kata(P.meiKana), email: P.email, zip, zip3: zip.slice(0, 3), zip4: zip.slice(3),
     tel, tel1: t3[0], tel2: t3[1], tel3: t3[2], pref: P.pref, city: P.city, addr: P.addr, cityAddr: `${P.city || ''}${P.addr || ''}`,
     bldg: P.bldg, gender: P.gender, genderShort: (P.gender || '').replace(/性$/, ''), age, ageDecade: age ? `${Math.floor(Number(age) / 10) * 10}代` : '',
+    birthYear: (P.birth || '').slice(0, 4),
   }
 }
 const PH = placeholders()
@@ -83,7 +84,8 @@ async function applyAnswers(frame, set) {
     const label = (el) => ((el.labels && el.labels[0]?.innerText) || el.parentElement?.innerText || '').trim()
     for (const [name, val] of entries) {
       if (val === '') continue
-      const els = Array.from(document.querySelectorAll(`[name="${CSS.escape(name)}"]`))
+      // キーが # で始まるときは id 指定、css: で始まるときはセレクタ指定（name 属性のないフォーム用）
+      const els = name.startsWith('css:') ? Array.from(document.querySelectorAll(name.slice(4))) : name.startsWith('#') ? Array.from(document.querySelectorAll(`#${CSS.escape(name.slice(1))}`)) : Array.from(document.querySelectorAll(`[name="${CSS.escape(name)}"]`))
       if (!els.length) continue
       const el = els[0]
       if (el.tagName === 'SELECT') {

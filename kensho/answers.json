@@ -58,5 +58,52 @@
     "v": 2,
     "note": "ナカバヤシ 今月のプレゼント。GitHub上ではトップから応募フォーム(form.run)まで辿れないため直接URLを指定",
     "url": "https://form.run/@nakabayashi-202611present"
+  },
+  "koubo_jp_contest_411842": {
+    "v": 1,
+    "note": "茨城をたべよう第624回。Q:ベニアズマは●●●●した食感→ヒントページ『ホクホク系の「ベニアズマ」』→ホクホク。フォームに name 属性がないため id で指定",
+    "quizDone": true,
+    "set": {
+      "#quizanswerfm": "ホクホク",
+      "#i-email": "{email}",
+      "#i-name": "{name}",
+      "#i-area": "{pref}"
+    }
+  },
+  "koubo_jp_contest_410092": {
+    "v": 1,
+    "note": "TOKYO GROWN シクラメン。Q:都の研究センターが育成した品種『はる香○○○』→ヒントページ『はる香ミディ』→ミディ",
+    "quizDone": true,
+    "set": {
+      "quizanswer": "ミディ",
+      "desired_product": "東京しゃも",
+      "email": "{email}",
+      "area": "{pref}",
+      "age": "{ageDecade}",
+      "css:input[type=radio]": "{genderShort}",
+      "css:input[type=checkbox]": "同意する"
+    }
+  },
+  "koubo_jp_contest_411541": {
+    "v": 1,
+    "note": "アクションチャンネル×JKC。知ったきっかけ・JKC認知・ドッグショー・飼育・視聴の必須設問に回答。賞品は当選数の多いC賞(エコバッグ10名)",
+    "set": {
+      "_field_63": "C賞",
+      "_field_5": "その他WEBサイト",
+      "_field_47": "今回はじめて知った",
+      "_field_54": "いいえ",
+      "_field_60": "今後飼いたいと思う",
+      "_field_44": "視聴していない",
+      "_field_3": "{tel}",
+      "_field_43[]": true
+    }
+  },
+  "koubo_jp_contest_389434": {
+    "v": 1,
+    "skip": "応募フォームにreCAPTCHA（画像認証）があるため自動では送らない"
+  },
+  "koubo_jp_contest_411557": {
+    "v": 1,
+    "skip": "当選連絡がXのDMのみ（Xアカウント記入が必要）のため対象外"
   }
 }

@@ -336,6 +336,8 @@
     } else if (type === 'checkbox' || type === 'radio') {
       if (el.name && document.querySelector(`input[name="${CSS.escape(el.name)}"]:checked`)) return
       if (el.checked) return
+      // name のないラジオは同じ枠の中でどれか選ばれていれば埋まっている
+      if (!el.name && type === 'radio' && el.parentElement?.parentElement?.closest('div, td, dd, li, fieldset')?.querySelector('input[type=radio]:checked')) return
     } else if (el.value) return
     missing.push((el.name || el.id || type || el.tagName).slice(0, 30))
   })
