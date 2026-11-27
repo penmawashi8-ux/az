@@ -245,7 +245,7 @@ function buildBookmarklet(p: Record<string, string>): string {
     let n = 0
     let q = 0
     const survey = P.survey !== 'off'
-    const comment = P.comment || 'いつも楽しく拝見しています。商品の魅力がよく伝わってきて、ぜひ試してみたいと思いました。当選したら家族と一緒に大切に使わせていただきます。'
+    const comment = P.comment || 'いつも楽しく拝見しています。これからも応援しています。'
     // 選ばない選択肢 / 触らないチェック（同意・メルマガ等は本人が確認する）
     const SKIP = /その他|答えたくない|回答しない|回答しません|わからない|分からない|選択して|選んで|^-+$|^\s*$/
     const NO_TOUCH = /同意|規約|ポリシー|個人情報|メルマガ|メールマガジン|配信を希望|ニュースレター|案内を受け|受け取る/

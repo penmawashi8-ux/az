@@ -13,7 +13,7 @@
   const tel = (P.tel || '').replace(/\D/g, '')
   const zip = (P.zip || '').replace(/\D/g, '')
   const kata = (s) => (s || '').replace(/[ぁ-ゖ]/g, (c) => String.fromCharCode(c.charCodeAt(0) + 0x60))
-  const comment = P.comment || 'いつも楽しく拝見しています。商品の魅力がよく伝わってきて、ぜひ試してみたいと思いました。当選したら家族と一緒に大切に使わせていただきます。'
+  const comment = P.comment || 'いつも楽しく拝見しています。これからも応援しています。'
   const SKIP = /その他|答えたくない|回答しない|回答しません|わからない|分からない|選択して|選んで|^-+$|^\s*$/
   const NO_TOUCH = /メルマガ|メールマガジン|配信を希望|ニュースレター|案内を受け|受け取る|お知らせを希望/
   const CONSENT = /同意|規約|ポリシー|個人情報の取り?扱/
