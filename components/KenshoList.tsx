@@ -553,7 +553,20 @@ export default function KenshoList() {
     get(DATA_URL)
       .catch(() => get((process.env.NEXT_PUBLIC_BASE_PATH || '') + '/kensho/data.json'))
       .then((d: Data) => {
-        const mine = readLS<Item[]>(MANUAL_KEY, []).filter((m) => !d.items.some((x) => xPostOf(x)?.id === xPostOf(m)?.id))
+        let mine = readLS<Item[]>(MANUAL_KEY, [])
+        // ?add=Xの投稿URL で開いたら、その懸賞を追加する（共有メニューやショートカットから使う）
+        const q = new URLSearchParams(location.search)
+        const added = q.get('add') ? manualItem(q.get('add')!, q.get('prize') || '') : null
+        if (added && !mine.some((m) => m.id === added.id)) {
+          mine = [added, ...mine].slice(0, 100)
+          writeLS(MANUAL_KEY, mine)
+        }
+        if (q.get('add')) {
+          window.history.replaceState(null, '', location.pathname)
+          setTab('x')
+          setAddMsg(added ? '追加しました（Xタブの先頭にあります）' : 'XのURLを読み取れませんでした')
+        }
+        mine = mine.filter((m) => !d.items.some((x) => xPostOf(x)?.id === xPostOf(m)?.id))
         setData({ ...d, items: [...mine, ...d.items] })
       })
       .catch((e) => setError(String(e)))
@@ -729,7 +742,7 @@ export default function KenshoList() {
       {data && items.length === 0 && tab !== 'history' && <p className="k-empty">{tab === 'todo' ? '新しい懸賞はありません。次の更新を待ちましょう。' : 'まだありません。'}</p>}
 
       {tab === 'x' && (
-        <details className="k-add">
+        <details className="k-add" open={!!addMsg || undefined}>
           <summary>Xで見つけた懸賞を追加</summary>
           <div className="k-addrow">
             <input type="url" inputMode="url" placeholder="投稿のURL（共有→リンクをコピー）" value={addUrl} onChange={(e) => setAddUrl(e.target.value)} />
