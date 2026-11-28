@@ -12,3 +12,5 @@
 ## 実行のしかた
 - GitHub の定期実行（schedule）はこのリポジトリでは発火しないため、`kensho/` 以下の変更を main に push すると収集・自動応募が1回走る。
 - GitHub アプリ／Web の Actions → kensho-collect →「Run workflow」でも実行できる。
+
+- 毎日 4:50（日本時間）に Claude が結果を確認し、止まった懸賞の回答メモ（answers.json）と X の回答文（x_answers.json）を追加する。
