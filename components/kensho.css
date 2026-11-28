@@ -114,3 +114,7 @@ body:has(.kensho) { background: var(--k-bg, #f6f7f9); }
 .k-onetrip { display: flex; gap: 6px; align-items: center; margin-top: 10px; cursor: pointer; }
 .k-btn:disabled { opacity: .5; }
 .k-undo { align-self: flex-start; font-size: 12px; margin-top: 2px; }
+.k-add { margin-bottom: 12px; }
+.k-add summary { cursor: pointer; font-size: 14px; padding: 6px 0; }
+.k-addrow { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 6px; }
+.k-addrow input { flex: 1 1 180px; min-width: 0; padding: 10px; font-size: 16px; border: 1px solid var(--k-line, #ccc); border-radius: 8px; background: transparent; color: inherit; }

@@ -63,6 +63,37 @@ const USERSCRIPT_PATH = '/kensho/x-oneclick.user.js'
 // public/kensho/x-oneclick.user.js の @version と合わせる
 const USERSCRIPT_VERSION = '1.0.3'
 
+// Xで自分で見つけた懸賞（投稿URLを貼って追加したもの）。この端末だけに保存
+const MANUAL_KEY = 'kensho.manualX.v1'
+
+/** Xの投稿URLから、連続応募モードで使える懸賞を作る（フォロー＋リポスト。返信などの指定は投稿を見て自分で） */
+function manualItem(url: string, prize: string): Item | null {
+  const m = X_STATUS.exec(url.trim())
+  if (!m) return null
+  const now = new Date().toISOString()
+  return {
+    id: `manual_${m[2]}`,
+    source: 'manual',
+    url: `https://x.com/${m[1]}/status/${m[2]}`,
+    title: `@${m[1]} の懸賞（自分で追加）`,
+    company: `@${m[1]}`,
+    published: now.slice(0, 10),
+    deadline: null,
+    winners: null,
+    value: 0,
+    prize: prize || 'Xで見つけた懸賞',
+    prizeShort: prize || 'Xで見つけた懸賞',
+    image: null,
+    xPost: `https://x.com/${m[1]}/status/${m[2]}`,
+    xNeeds: ['follow', 'repost'],
+    xFollows: [],
+    methods: ['x'],
+    entryUrl: `https://x.com/${m[1]}/status/${m[2]}`,
+    score: 0,
+    addedAt: now,
+  }
+}
+
 function readLS<T>(key: string, fallback: T): T {
   try {
     const v = localStorage.getItem(key)
@@ -428,6 +459,26 @@ export default function KenshoList() {
   // ワンボタン応募用のユーザースクリプトが入っているか（入っていればバージョン）
   const [ext, setExt] = useState<string | null>(null)
   const [kxMsg, setKxMsg] = useState<string | null>(null)
+  const [addUrl, setAddUrl] = useState('')
+  const [addPrize, setAddPrize] = useState('')
+  const [addMsg, setAddMsg] = useState<string | null>(null)
+
+  const addManual = () => {
+    const it = manualItem(addUrl, addPrize.trim())
+    if (!it) {
+      setAddMsg('Xの投稿のURL（x.com/…/status/…）を貼ってください')
+      return
+    }
+    if (data?.items.some((x) => xPostOf(x)?.id === xPostOf(it)?.id)) {
+      setAddMsg('この懸賞はもう一覧にあります')
+      return
+    }
+    writeLS(MANUAL_KEY, [it, ...readLS<Item[]>(MANUAL_KEY, [])].slice(0, 100))
+    setData((d) => (d ? { ...d, items: [it, ...d.items] } : d))
+    setAddUrl('')
+    setAddPrize('')
+    setAddMsg('追加しました。連続応募モードでフォロー・リポストできます（返信などの条件は投稿を見て追加してください）')
+  }
 
   useEffect(() => {
     // スクリプト1.0.3以降は保存領域にも「今ここで動いた」記録を残す（目印が描画で消えても分かるように）
@@ -501,7 +552,10 @@ export default function KenshoList() {
     const get = (u: string) => fetch(u, { cache: 'no-store' }).then((r) => (r.ok ? r.json() : Promise.reject(r.status)))
     get(DATA_URL)
       .catch(() => get((process.env.NEXT_PUBLIC_BASE_PATH || '') + '/kensho/data.json'))
-      .then(setData)
+      .then((d: Data) => {
+        const mine = readLS<Item[]>(MANUAL_KEY, []).filter((m) => !d.items.some((x) => xPostOf(x)?.id === xPostOf(m)?.id))
+        setData({ ...d, items: [...mine, ...d.items] })
+      })
       .catch((e) => setError(String(e)))
     get(APPLIED_URL).then(setBot).catch(() => {})
   }, [])
@@ -674,6 +728,17 @@ export default function KenshoList() {
       {error && <p className="k-empty">データを読み込めませんでした（{error}）</p>}
       {data && items.length === 0 && tab !== 'history' && <p className="k-empty">{tab === 'todo' ? '新しい懸賞はありません。次の更新を待ちましょう。' : 'まだありません。'}</p>}
 
+      {tab === 'x' && (
+        <details className="k-add">
+          <summary>Xで見つけた懸賞を追加</summary>
+          <div className="k-addrow">
+            <input type="url" inputMode="url" placeholder="投稿のURL（共有→リンクをコピー）" value={addUrl} onChange={(e) => setAddUrl(e.target.value)} />
+            <input type="text" placeholder="賞品（任意）" value={addPrize} onChange={(e) => setAddPrize(e.target.value)} />
+            <button className="k-btn" onClick={addManual}>追加</button>
+          </div>
+          {addMsg && <p className="k-note">{addMsg}</p>}
+        </details>
+      )}
       {tab === 'x' && items.length > 0 && (
         <button className="k-btn primary k-runall" onClick={() => setRun({ queue: items.map((i) => i.id), i: 0, done: {} })}>
           連続応募モード（{items.length}件）
